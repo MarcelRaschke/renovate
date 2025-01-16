@@ -1,3 +1,4 @@
+import { mockDeep } from 'jest-mock-extended';
 import * as httpMock from '../../../../test/http-mock';
 import { mocked } from '../../../../test/util';
 import * as _hostRules from '../../../util/host-rules';
@@ -6,7 +7,7 @@ import { GithubTagsDatasource } from '../github-tags';
 import { BaseGoDatasource } from './base';
 import { GoDirectDatasource } from './releases-direct';
 
-jest.mock('../../../util/host-rules');
+jest.mock('../../../util/host-rules', () => mockDeep());
 jest.mock('./base');
 
 const datasource = new GoDirectDatasource();
@@ -17,7 +18,7 @@ describe('modules/datasource/go/releases-direct', () => {
   const gitGetTags = jest.spyOn(GitTagsDatasource.prototype, 'getReleases');
   const githubGetTags = jest.spyOn(
     GithubTagsDatasource.prototype,
-    'getReleases'
+    'getReleases',
   );
 
   beforeEach(() => {
@@ -39,7 +40,7 @@ describe('modules/datasource/go/releases-direct', () => {
       await expect(
         datasource.getReleases({
           packageName: 'golang.org/foo/something',
-        })
+        }),
       ).rejects.toThrow();
     });
 
@@ -85,6 +86,67 @@ describe('modules/datasource/go/releases-direct', () => {
       expect(res).toMatchSnapshot();
       expect(res).not.toBeNull();
       expect(res).toBeDefined();
+    });
+
+    it('support gitea', async () => {
+      getDatasourceSpy.mockResolvedValueOnce({
+        datasource: 'gitea-tags',
+        registryUrl: 'https://gitea.com',
+        packageName: 'go-chi/cache',
+      });
+      httpMock
+        .scope('https://gitea.com/')
+        .get('/api/v1/repos/go-chi/cache/tags')
+        .reply(200, [
+          {
+            name: 'v0.1.0',
+            commit: {
+              sha: 'd73d815ec22c421e7192a414594ac798c73c89e5',
+              created: '2022-05-15T16:29:42Z',
+            },
+          },
+          {
+            name: 'v0.2.0',
+            commit: {
+              sha: '3976707232cb68751ff2ddf42547ff95c6878a97',
+              created: '2022-05-15T17:23:28Z',
+            },
+          },
+          {
+            name: 'v0.2.1',
+            commit: {
+              sha: '2963b104773ead7ed28c00181c03318885d909dc',
+              created: '2024-09-06T23:44:34Z',
+            },
+          },
+        ]);
+      const res = await datasource.getReleases({
+        packageName: 'gitea.com/go-chi/cache',
+      });
+      expect(res).toEqual({
+        registryUrl: 'https://gitea.com',
+        releases: [
+          {
+            gitRef: 'v0.1.0',
+            newDigest: 'd73d815ec22c421e7192a414594ac798c73c89e5',
+            releaseTimestamp: '2022-05-15T16:29:42Z',
+            version: 'v0.1.0',
+          },
+          {
+            gitRef: 'v0.2.0',
+            newDigest: '3976707232cb68751ff2ddf42547ff95c6878a97',
+            releaseTimestamp: '2022-05-15T17:23:28Z',
+            version: 'v0.2.0',
+          },
+          {
+            gitRef: 'v0.2.1',
+            newDigest: '2963b104773ead7ed28c00181c03318885d909dc',
+            releaseTimestamp: '2024-09-06T23:44:34Z',
+            version: 'v0.2.1',
+          },
+        ],
+        sourceUrl: null,
+      });
     });
 
     it('support git', async () => {
@@ -214,7 +276,7 @@ describe('modules/datasource/go/releases-direct', () => {
       httpMock
         .scope('https://gitlab.com/')
         .get(
-          '/api/v4/projects/group%2Fsubgroup%2Frepo/repository/tags?per_page=100'
+          '/api/v4/projects/group%2Fsubgroup%2Frepo/repository/tags?per_page=100',
         )
         .reply(200, [{ name: 'v1.0.0' }, { name: 'v2.0.0' }]);
       const res = await datasource.getReleases({
@@ -261,7 +323,7 @@ describe('modules/datasource/go/releases-direct', () => {
       }
     });
 
-    it('returns none if no tags match submodules', async () => {
+    it('falls back to unprefixed tags', async () => {
       getDatasourceSpy.mockResolvedValueOnce({
         datasource: 'github-tags',
         packageName: 'x/text',
@@ -272,22 +334,19 @@ describe('modules/datasource/go/releases-direct', () => {
         packageName: 'x/text',
         registryUrl: 'https://github.com',
       });
-      const packages = [
-        { packageName: 'github.com/x/text/a' },
-        { packageName: 'github.com/x/text/b' },
+
+      const releases = [
+        { version: 'v1.0.0', gitRef: 'v1.0.0' },
+        { version: 'v2.0.0', gitRef: 'v2.0.0' },
       ];
+      githubGetTags.mockResolvedValue({ releases });
 
-      githubGetTags.mockResolvedValue({
-        releases: [
-          { version: 'v1.0.0', gitRef: 'v1.0.0' },
-          { version: 'v2.0.0', gitRef: 'v2.0.0' },
-        ],
-      });
-
-      for (const pkg of packages) {
-        const result = await datasource.getReleases(pkg);
-        expect(result?.releases).toHaveLength(0);
-      }
+      await expect(
+        datasource.getReleases({ packageName: 'github.com/x/text/a' }),
+      ).resolves.toEqual({ releases, sourceUrl: 'https://github.com/x/text' });
+      await expect(
+        datasource.getReleases({ packageName: 'github.com/x/text/b' }),
+      ).resolves.toEqual({ releases, sourceUrl: 'https://github.com/x/text' });
     });
 
     it('works for nested modules on github v2+ major upgrades', async () => {
@@ -304,6 +363,7 @@ describe('modules/datasource/go/releases-direct', () => {
           { version: 'v5.0.0', gitRef: 'v5.0.0' },
           { version: 'b/v2.0.0', gitRef: 'b/v2.0.0' },
           { version: 'b/v3.0.0', gitRef: 'b/v3.0.0' },
+          { version: 'b/vuw/xyz', gitRef: 'b/vuw/xyz' },
         ],
       });
 

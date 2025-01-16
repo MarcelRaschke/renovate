@@ -3,11 +3,14 @@ import { BazelDatasource } from '../../datasource/bazel';
 import { GithubTagsDatasource } from '../../datasource/github-tags';
 import type { PackageDependency } from '../types';
 import * as fragments from './fragments';
-import {
+import type {
   BasePackageDep,
   BazelModulePackageDep,
   MergePackageDep,
   OverridePackageDep,
+} from './rules';
+import {
+  GitRepositoryToPackageDep,
   RuleToBazelModulePackageDep,
   bazelModulePackageDepToPackageDependency,
   processModulePkgDeps,
@@ -70,6 +73,19 @@ const singleVersionOverrideWithoutVersionAndRegistryPkgDep: BasePackageDep = {
   depName: 'rules_foo',
   skipReason: 'ignored',
 };
+const gitRepositoryForGithubPkgDep: BasePackageDep = {
+  datasource: GithubTagsDatasource.id,
+  depType: 'git_repository',
+  depName: 'rules_foo',
+  packageName: 'example/rules_foo',
+  currentDigest: '850cb49c8649e463b80ef7984e7c744279746170',
+};
+const gitRepositoryForUnsupportedPkgDep: BasePackageDep = {
+  depType: 'git_repository',
+  depName: 'rules_foo',
+  currentDigest: '850cb49c8649e463b80ef7984e7c744279746170',
+  skipReason: 'unsupported-datasource',
+};
 
 describe('modules/manager/bazel-module/rules', () => {
   describe('RuleToBazelModulePackageDep', () => {
@@ -123,6 +139,30 @@ describe('modules/manager/bazel-module/rules', () => {
       ${'single_version_override with registry'}             | ${singleVersionOverrideWithRegistry} | ${singleVersionOverrideWithRegistryPkgDep}
     `('.parse() with $msg', ({ a, exp }) => {
       const pkgDep = RuleToBazelModulePackageDep.parse(a);
+      expect(pkgDep).toEqual(exp);
+    });
+  });
+
+  describe('GitRepositoryToPackageDep', () => {
+    const gitRepositoryWithGihubHost = fragments.record({
+      rule: fragments.string('git_repository'),
+      name: fragments.string('rules_foo'),
+      remote: fragments.string('https://github.com/example/rules_foo.git'),
+      commit: fragments.string('850cb49c8649e463b80ef7984e7c744279746170'),
+    });
+    const gitRepositoryWithUnsupportedHost = fragments.record({
+      rule: fragments.string('git_repository'),
+      name: fragments.string('rules_foo'),
+      remote: fragments.string('https://nobuenos.com/example/rules_foo.git'),
+      commit: fragments.string('850cb49c8649e463b80ef7984e7c744279746170'),
+    });
+
+    it.each`
+      msg                                   | a                                   | exp
+      ${'git_repository, GitHub host'}      | ${gitRepositoryWithGihubHost}       | ${gitRepositoryForGithubPkgDep}
+      ${'git_repository, unsupported host'} | ${gitRepositoryWithUnsupportedHost} | ${gitRepositoryForUnsupportedPkgDep}
+    `('.parse() with $msg', ({ a, exp }) => {
+      const pkgDep = GitRepositoryToPackageDep.parse(a);
       expect(pkgDep).toEqual(exp);
     });
   });

@@ -2,11 +2,16 @@ import is from '@sindresorhus/is';
 import { DateTime } from 'luxon';
 import { GlobalConfig } from '../../../config/global';
 import { logger } from '../../../logger';
-import { Decorator, decorate } from '../../decorator';
-import type { DecoratorCachedRecord } from './types';
+import type { Decorator } from '../../decorator';
+import { decorate } from '../../decorator';
+import { acquireLock } from '../../mutex';
+import type { DecoratorCachedRecord, PackageCacheNamespace } from './types';
 import * as packageCache from '.';
 
 type HashFunction<T extends any[] = any[]> = (...args: T) => string;
+type NamespaceFunction<T extends any[] = any[]> = (
+  ...args: T
+) => PackageCacheNamespace;
 type BooleanFunction<T extends any[] = any[]> = (...args: T) => boolean;
 
 /**
@@ -17,7 +22,7 @@ interface CacheParameters {
    * The cache namespace
    * Either a string or a hash function that generates a string
    */
-  namespace: string | HashFunction;
+  namespace: PackageCacheNamespace | NamespaceFunction;
 
   /**
    * The cache key
@@ -47,11 +52,16 @@ export function cache<T>({
   ttlMinutes = 30,
 }: CacheParameters): Decorator<T> {
   return decorate(async ({ args, instance, callback, methodName }) => {
-    if (!cacheable.apply(instance, args)) {
+    const cachePrivatePackages = GlobalConfig.get(
+      'cachePrivatePackages',
+      false,
+    );
+    const isCacheable = cachePrivatePackages || cacheable.apply(instance, args);
+    if (!isCacheable) {
       return callback();
     }
 
-    let finalNamespace: string | undefined;
+    let finalNamespace: PackageCacheNamespace | undefined;
     if (is.string(namespace)) {
       finalNamespace = namespace;
     } else if (is.function_(namespace)) {
@@ -71,67 +81,75 @@ export function cache<T>({
     }
 
     finalKey = `cache-decorator:${finalKey}`;
-    const oldRecord = await packageCache.get<DecoratorCachedRecord>(
-      finalNamespace,
-      finalKey
-    );
 
-    const ttlOverride = getTtlOverride(finalNamespace);
-    const softTtl = ttlOverride ?? ttlMinutes;
+    // prevent concurrent processing and cache writes
+    const releaseLock = await acquireLock(finalKey, finalNamespace);
 
-    const cacheHardTtlMinutes = GlobalConfig.get(
-      'cacheHardTtlMinutes',
-      7 * 24 * 60
-    );
-    let hardTtl = softTtl;
-    if (methodName === 'getReleases' || methodName === 'getDigest') {
-      hardTtl = Math.max(softTtl, cacheHardTtlMinutes);
-    }
+    try {
+      const oldRecord = await packageCache.get<DecoratorCachedRecord>(
+        finalNamespace,
+        finalKey,
+      );
 
-    let oldData: unknown;
-    if (oldRecord) {
-      const now = DateTime.local();
-      const cachedAt = DateTime.fromISO(oldRecord.cachedAt);
+      const ttlOverride = getTtlOverride(finalNamespace);
+      const softTtl = ttlOverride ?? ttlMinutes;
 
-      const softDeadline = cachedAt.plus({ minutes: softTtl });
-      if (now < softDeadline) {
-        return oldRecord.value;
+      const cacheHardTtlMinutes = GlobalConfig.get(
+        'cacheHardTtlMinutes',
+        7 * 24 * 60,
+      );
+      let hardTtl = softTtl;
+      if (methodName === 'getReleases' || methodName === 'getDigest') {
+        hardTtl = Math.max(softTtl, cacheHardTtlMinutes);
       }
 
-      const hardDeadline = cachedAt.plus({ minutes: hardTtl });
-      if (now < hardDeadline) {
-        oldData = oldRecord.value;
-      }
-    }
+      let oldData: unknown;
+      if (oldRecord) {
+        const now = DateTime.local();
+        const cachedAt = DateTime.fromISO(oldRecord.cachedAt);
 
-    let newData: unknown;
-    if (oldData) {
-      try {
+        const softDeadline = cachedAt.plus({ minutes: softTtl });
+        if (now < softDeadline) {
+          return oldRecord.value;
+        }
+
+        const hardDeadline = cachedAt.plus({ minutes: hardTtl });
+        if (now < hardDeadline) {
+          oldData = oldRecord.value;
+        }
+      }
+
+      let newData: unknown;
+      if (oldData) {
+        try {
+          newData = (await callback()) as T | undefined;
+        } catch (err) {
+          logger.debug(
+            { err },
+            'Package cache decorator: callback error, returning old data',
+          );
+          return oldData;
+        }
+      } else {
         newData = (await callback()) as T | undefined;
-      } catch (err) {
-        logger.debug(
-          { err },
-          'Package cache decorator: callback error, returning old data'
-        );
-        return oldData;
       }
-    } else {
-      newData = (await callback()) as T | undefined;
-    }
 
-    if (!is.undefined(newData)) {
-      const newRecord: DecoratorCachedRecord = {
-        cachedAt: DateTime.local().toISO()!,
-        value: newData,
-      };
-      await packageCache.set(finalNamespace, finalKey, newRecord, hardTtl);
-    }
+      if (!is.undefined(newData)) {
+        const newRecord: DecoratorCachedRecord = {
+          cachedAt: DateTime.local().toISO(),
+          value: newData,
+        };
+        await packageCache.set(finalNamespace, finalKey, newRecord, hardTtl);
+      }
 
-    return newData;
+      return newData;
+    } finally {
+      releaseLock();
+    }
   });
 }
 
-function getTtlOverride(namespace: string): number | undefined {
+export function getTtlOverride(namespace: string): number | undefined {
   const ttl: unknown = GlobalConfig.get('cacheTtlOverride', {})[namespace];
   if (is.number(ttl)) {
     return ttl;

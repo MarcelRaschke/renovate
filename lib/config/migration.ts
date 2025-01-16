@@ -21,7 +21,10 @@ export function fixShortHours(input: string): string {
 
 let optionTypes: Record<string, RenovateOptions['type']>;
 // Returns a migrated config
-export function migrateConfig(config: RenovateConfig): MigratedConfig {
+export function migrateConfig(
+  config: RenovateConfig,
+  parentKey?: string,
+): MigratedConfig {
   try {
     if (!optionTypes) {
       optionTypes = {};
@@ -29,29 +32,29 @@ export function migrateConfig(config: RenovateConfig): MigratedConfig {
         optionTypes[option.name] = option.type;
       });
     }
-    const newConfig = MigrationsService.run(config);
+    const newConfig = MigrationsService.run(config, parentKey);
     const migratedConfig = clone(newConfig) as MigratedRenovateConfig;
 
     for (const [key, val] of Object.entries(newConfig)) {
       if (is.string(val) && val.includes('{{baseDir}}')) {
         migratedConfig[key] = val.replace(
           regEx(/{{baseDir}}/g),
-          '{{packageFileDir}}'
+          '{{packageFileDir}}',
         );
       } else if (is.string(val) && val.includes('{{lookupName}}')) {
         migratedConfig[key] = val.replace(
           regEx(/{{lookupName}}/g),
-          '{{packageName}}'
+          '{{packageName}}',
         );
       } else if (is.string(val) && val.includes('{{depNameShort}}')) {
         migratedConfig[key] = val.replace(
           regEx(/{{depNameShort}}/g),
-          '{{depName}}'
+          '{{depName}}',
         );
       } else if (is.string(val) && val.startsWith('{{semanticPrefix}}')) {
         migratedConfig[key] = val.replace(
           '{{semanticPrefix}}',
-          '{{#if semanticCommitType}}{{semanticCommitType}}{{#if semanticCommitScope}}({{semanticCommitScope}}){{/if}}: {{/if}}'
+          '{{#if semanticCommitType}}{{semanticCommitType}}{{#if semanticCommitScope}}({{semanticCommitScope}}){{/if}}: {{/if}}',
         );
       } else if (optionTypes[key] === 'object' && is.boolean(val)) {
         migratedConfig[key] = { enabled: val };
@@ -70,7 +73,7 @@ export function migrateConfig(config: RenovateConfig): MigratedConfig {
       } else if (is.array(val)) {
         if (is.array(migratedConfig?.[key])) {
           const newArray = [];
-          for (const item of migratedConfig[key] as unknown[]) {
+          for (const item of migratedConfig[key]) {
             if (is.object(item) && !is.array(item)) {
               const arrMigrate = migrateConfig(item as RenovateConfig);
               newArray.push(arrMigrate.migratedConfig);
@@ -81,7 +84,10 @@ export function migrateConfig(config: RenovateConfig): MigratedConfig {
           migratedConfig[key] = newArray;
         }
       } else if (is.object(val)) {
-        const subMigrate = migrateConfig(migratedConfig[key] as RenovateConfig);
+        const subMigrate = migrateConfig(
+          migratedConfig[key] as RenovateConfig,
+          key,
+        );
         if (subMigrate.isMigrated) {
           migratedConfig[key] = subMigrate.migratedConfig;
         }
@@ -99,7 +105,7 @@ export function migrateConfig(config: RenovateConfig): MigratedConfig {
         for (const [from, to] of Object.entries(migratedTemplates)) {
           migratedConfig[key] = (migratedConfig[key] as string).replace(
             regEx(from, 'g'),
-            to
+            to,
           );
         }
       }
@@ -140,7 +146,7 @@ export function migrateConfig(config: RenovateConfig): MigratedConfig {
             // TODO: fix types #22198
             const combinedRule = mergeChildConfig(
               packageRule,
-              subrule as PackageRule
+              subrule as PackageRule,
             );
             delete combinedRule.packageRules;
             migratedConfig.packageRules.push(combinedRule);
@@ -150,20 +156,34 @@ export function migrateConfig(config: RenovateConfig): MigratedConfig {
         }
       }
     }
+    if (
+      is.nonEmptyObject(migratedConfig['pip-compile']) &&
+      is.nonEmptyArray(migratedConfig['pip-compile'].fileMatch)
+    ) {
+      migratedConfig['pip-compile'].fileMatch = migratedConfig[
+        'pip-compile'
+      ].fileMatch.map((fileMatch) => {
+        const match = fileMatch as string;
+        if (match.endsWith('.in')) {
+          return match.replace(/\.in$/, '.txt');
+        }
+        return match.replace(/\.in\$$/, '.txt$');
+      });
+    }
     if (is.nonEmptyArray(migratedConfig.matchManagers)) {
       if (migratedConfig.matchManagers.includes('gradle-lite')) {
         if (!migratedConfig.matchManagers.includes('gradle')) {
           migratedConfig.matchManagers.push('gradle');
         }
         migratedConfig.matchManagers = migratedConfig.matchManagers.filter(
-          (manager) => manager !== 'gradle-lite'
+          (manager) => manager !== 'gradle-lite',
         );
       }
     }
     if (is.nonEmptyObject(migratedConfig['gradle-lite'])) {
       migratedConfig.gradle = mergeChildConfig(
         migratedConfig.gradle ?? {},
-        migratedConfig['gradle-lite']
+        migratedConfig['gradle-lite'],
       );
     }
     delete migratedConfig['gradle-lite'];

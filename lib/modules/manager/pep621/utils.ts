@@ -1,24 +1,30 @@
-import toml from '@iarna/toml';
 import is from '@sindresorhus/is';
 import { logger } from '../../../logger';
 import { regEx } from '../../../util/regex';
+import { parse as parseToml } from '../../../util/toml';
 import { PypiDatasource } from '../../datasource/pypi';
+import { normalizePythonDepName } from '../../datasource/pypi/common';
 import type { PackageDependency } from '../types';
-import { PyProject, PyProjectSchema } from './schema';
-import type { Pep508ParseResult } from './types';
+import type { PyProject } from './schema';
+import { PyProjectSchema } from './schema';
+import type { Pep508ParseResult, Pep621ManagerData } from './types';
 
 const pep508Regex = regEx(
-  /^(?<packageName>[A-Z0-9._-]+)\s*(\[(?<extras>[A-Z0-9,._-]+)\])?\s*(?<currentValue>[^;]+)?(;\s*(?<marker>.*))?/i
+  /^(?<packageName>[A-Z0-9._-]+)\s*(\[(?<extras>[A-Z0-9\s,._-]+)\])?\s*(?<currentValue>[^;]+)?(;\s*(?<marker>.*))?/i,
 );
 
 export const depTypes = {
   dependencies: 'project.dependencies',
   optionalDependencies: 'project.optional-dependencies',
+  dependencyGroups: 'dependency-groups',
   pdmDevDependencies: 'tool.pdm.dev-dependencies',
+  uvDevDependencies: 'tool.uv.dev-dependencies',
+  uvSources: 'tool.uv.sources',
+  buildSystemRequires: 'build-system.requires',
 };
 
 export function parsePEP508(
-  value: string | null | undefined
+  value: string | null | undefined,
 ): Pep508ParseResult | null {
   if (is.nullOrUndefined(value)) {
     return null;
@@ -43,7 +49,8 @@ export function parsePEP508(
     result.marker = regExpExec.groups.marker;
   }
   if (is.nonEmptyString(regExpExec.groups.extras)) {
-    result.extras = regExpExec.groups.extras.split(',');
+    // trim to remove allowed whitespace between brackets
+    result.extras = regExpExec.groups.extras.split(',').map((e) => e.trim());
   }
 
   return result;
@@ -51,7 +58,7 @@ export function parsePEP508(
 
 export function pep508ToPackageDependency(
   depType: string,
-  value: string
+  value: string,
 ): PackageDependency | null {
   const parsed = parsePEP508(value);
   if (is.nullOrUndefined(parsed)) {
@@ -59,7 +66,7 @@ export function pep508ToPackageDependency(
   }
 
   const dep: PackageDependency = {
-    packageName: parsed.packageName,
+    packageName: normalizePythonDepName(parsed.packageName),
     depName: parsed.packageName,
     datasource: PypiDatasource.id,
     depType,
@@ -69,22 +76,30 @@ export function pep508ToPackageDependency(
     dep.skipReason = 'unspecified-version';
   } else {
     dep.currentValue = parsed.currentValue;
+
+    if (parsed.currentValue.startsWith('==')) {
+      dep.currentVersion = parsed.currentValue.replace(regEx(/^==\s*/), '');
+    }
   }
   return dep;
 }
 
 export function parseDependencyGroupRecord(
   depType: string,
-  records: Record<string, string[]> | null | undefined
+  records: Record<string, string[]> | null | undefined,
 ): PackageDependency[] {
   if (is.nullOrUndefined(records)) {
     return [];
   }
 
-  const deps: PackageDependency[] = [];
-  for (const [groupName, pep508Strings] of Object.entries(records)) {
+  const deps: PackageDependency<Pep621ManagerData>[] = [];
+  for (const [depGroup, pep508Strings] of Object.entries(records)) {
     for (const dep of parseDependencyList(depType, pep508Strings)) {
-      deps.push({ ...dep, depName: `${groupName}/${dep.packageName!}` });
+      deps.push({
+        ...dep,
+        depName: dep.packageName!,
+        managerData: { depGroup },
+      });
     }
   }
   return deps;
@@ -92,7 +107,7 @@ export function parseDependencyGroupRecord(
 
 export function parseDependencyList(
   depType: string,
-  list: string[] | null | undefined
+  list: string[] | null | undefined,
 ): PackageDependency[] {
   if (is.nullOrUndefined(list)) {
     return [];
@@ -110,15 +125,15 @@ export function parseDependencyList(
 
 export function parsePyProject(
   packageFile: string,
-  content: string
+  content: string,
 ): PyProject | null {
   try {
-    const jsonMap = toml.parse(content);
+    const jsonMap = parseToml(content);
     return PyProjectSchema.parse(jsonMap);
   } catch (err) {
     logger.debug(
       { packageFile, err },
-      `Failed to parse and validate pyproject file`
+      `Failed to parse and validate pyproject file`,
     );
     return null;
   }

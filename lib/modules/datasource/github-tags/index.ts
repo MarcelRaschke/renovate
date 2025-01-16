@@ -20,6 +20,14 @@ export class GithubTagsDatasource extends Datasource {
 
   override readonly registryStrategy = 'hunt';
 
+  override readonly releaseTimestampSupport = true;
+  // Note: not sure
+  override readonly releaseTimestampNote =
+    'The get release timestamp is determined from the `releaseTimestamp` field in the results.';
+  override readonly sourceUrlSupport = 'package';
+  override readonly sourceUrlNote =
+    'The source URL is determined by using the `packageName` and `registryUrl`.';
+
   override http: GithubHttp;
 
   constructor() {
@@ -29,7 +37,7 @@ export class GithubTagsDatasource extends Datasource {
 
   async getCommit(
     registryUrl: string | undefined,
-    githubRepo: string
+    githubRepo: string,
   ): Promise<string | null> {
     const apiBaseUrl = getApiBaseUrl(registryUrl);
     let digest: string | null = null;
@@ -40,7 +48,7 @@ export class GithubTagsDatasource extends Datasource {
     } catch (err) {
       logger.debug(
         { githubRepo, err, registryUrl },
-        'Error getting latest commit from GitHub repo'
+        'Error getting latest commit from GitHub repo',
       );
     }
     return digest;
@@ -55,7 +63,7 @@ export class GithubTagsDatasource extends Datasource {
    */
   override getDigest(
     { packageName: repo, registryUrl }: Partial<DigestConfig>,
-    newValue?: string
+    newValue?: string,
   ): Promise<string | null> {
     return newValue
       ? findCommitOfTag(registryUrl, repo!, newValue, this.http)
@@ -63,7 +71,7 @@ export class GithubTagsDatasource extends Datasource {
   }
 
   override async getReleases(
-    config: GetReleasesConfig
+    config: GetReleasesConfig,
   ): Promise<ReleaseResult> {
     const { registryUrl, packageName: repo } = config;
     const sourceUrl = getSourceUrl(repo, registryUrl);
@@ -74,7 +82,7 @@ export class GithubTagsDatasource extends Datasource {
         version,
         releaseTimestamp,
         gitRef,
-      })
+      }),
     );
 
     try {

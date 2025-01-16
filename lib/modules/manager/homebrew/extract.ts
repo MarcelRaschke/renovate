@@ -57,7 +57,7 @@ function extractUrl(content: string): string | null {
 }
 
 export function parseUrlPath(
-  urlStr: string | null | undefined
+  urlStr: string | null | undefined,
 ): UrlPathParsedResult | null {
   if (!urlStr) {
     return null;
@@ -73,10 +73,15 @@ export function parseUrlPath(
     const repoName = s[1];
     let currentValue: string | undefined;
     if (s[2] === 'archive') {
+      // old archive url in form: [...]/archive/<tag>.tar.gz
       currentValue = s[3];
+      if (currentValue === 'refs') {
+        // new archive url in form: [...]/archive/refs/tags/<tag>.tar.gz
+        currentValue = s[5];
+      }
       const targz = currentValue.slice(
         currentValue.length - 7,
-        currentValue.length
+        currentValue.length,
       );
       if (targz === '.tar.gz') {
         currentValue = currentValue.substring(0, currentValue.length - 7);
@@ -88,7 +93,7 @@ export function parseUrlPath(
       return null;
     }
     return { currentValue, ownerName, repoName };
-  } catch (_) {
+  } catch {
     return null;
   }
 }

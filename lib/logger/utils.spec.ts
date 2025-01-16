@@ -11,11 +11,13 @@ describe('logger/utils', () => {
   });
 
   it('checks for valid log levels', () => {
-    expect(validateLogLevel(undefined)).toBeUndefined();
-    expect(validateLogLevel('warn')).toBeUndefined();
-    expect(validateLogLevel('debug')).toBeUndefined();
-    expect(validateLogLevel('trace')).toBeUndefined();
-    expect(validateLogLevel('info')).toBeUndefined();
+    expect(validateLogLevel(undefined, 'info')).toBe('info');
+    expect(validateLogLevel('warn', 'info')).toBe('warn');
+    expect(validateLogLevel('debug', 'info')).toBe('debug');
+    expect(validateLogLevel('trace', 'info')).toBe('trace');
+    expect(validateLogLevel('info', 'info')).toBe('info');
+    expect(validateLogLevel('error', 'info')).toBe('error');
+    expect(validateLogLevel('fatal', 'info')).toBe('fatal');
   });
 
   it.each`
@@ -32,7 +34,7 @@ describe('logger/utils', () => {
       throw new Error(`process.exit: ${number}`);
     });
     expect(() => {
-      validateLogLevel(input);
+      validateLogLevel(input, 'info');
     }).toThrow();
     expect(mockExit).toHaveBeenCalledWith(1);
   });
@@ -46,15 +48,44 @@ describe('logger/utils', () => {
     ${'redis://:somepw@172.32.11.71:6379/0'}                              | ${'redis://**redacted**@172.32.11.71:6379/0'}
     ${'some text with\r\n url: https://somepw@domain.com\nand some more'} | ${'some text with\r\n url: https://**redacted**@domain.com\nand some more'}
     ${'[git://domain.com](git://pw@domain.com)'}                          | ${'[git://domain.com](git://**redacted**@domain.com)'}
+    ${'data:text/vnd-example;foo=bar;base64,R0lGODdh'}                    | ${'data:text/vnd-example;**redacted**'}
     ${'user@domain.com'}                                                  | ${'user@domain.com'}
   `('sanitizeValue("$input") == "$output"', ({ input, output }) => {
     expect(sanitizeValue(input)).toBe(output);
   });
 
+  it('preserves secret template strings in redacted fields', () => {
+    const input = {
+      normal: 'value',
+      token: '{{ secrets.MY_SECRET }}',
+      password: '{{secrets.ANOTHER_SECRET}}',
+      content: '{{ secrets.CONTENT_SECRET }}',
+      npmToken: '{{ secrets.NPM_TOKEN }}',
+      forkToken: 'some-token',
+      nested: {
+        authorization: '{{ secrets.NESTED_SECRET }}',
+        password: 'some-password',
+      },
+    };
+    const expected = {
+      normal: 'value',
+      token: '{{ secrets.MY_SECRET }}',
+      password: '{{secrets.ANOTHER_SECRET}}',
+      content: '[content]',
+      npmToken: '{{ secrets.NPM_TOKEN }}',
+      forkToken: '***********',
+      nested: {
+        authorization: '{{ secrets.NESTED_SECRET }}',
+        password: '***********',
+      },
+    };
+    expect(sanitizeValue(input)).toEqual(expected);
+  });
+
   describe('prepareError', () => {
     function getError<T extends z.ZodType>(
       schema: T,
-      input: unknown
+      input: unknown,
     ): z.ZodError | null {
       try {
         schema.parse(input);
@@ -68,7 +99,7 @@ describe('logger/utils', () => {
 
     function prepareIssues<T extends z.ZodType>(
       schema: T,
-      input: unknown
+      input: unknown,
     ): unknown {
       const error = getError(schema, input);
       return error ? prepareZodIssues(error.format()) : null;
@@ -76,15 +107,15 @@ describe('logger/utils', () => {
 
     it('prepareZodIssues', () => {
       expect(prepareIssues(z.string(), 42)).toBe(
-        'Expected string, received number'
+        'Expected string, received number',
       );
 
       expect(prepareIssues(z.string().array(), 42)).toBe(
-        'Expected array, received number'
+        'Expected array, received number',
       );
 
       expect(
-        prepareIssues(z.string().array(), ['foo', 'bar', 42, 42, 42, 42, 42])
+        prepareIssues(z.string().array(), ['foo', 'bar', 42, 42, 42, 42, 42]),
       ).toEqual({
         '2': 'Expected string, received number',
         '3': 'Expected string, received number',
@@ -101,7 +132,7 @@ describe('logger/utils', () => {
           key3: 42,
           key4: 42,
           key5: 42,
-        })
+        }),
       ).toEqual({
         key1: 'Expected string, received number',
         key2: 'Expected string, received number',
@@ -116,8 +147,8 @@ describe('logger/utils', () => {
               bar: z.string(),
             }),
           }),
-          { foo: { bar: [], baz: 42 } }
-        )
+          { foo: { bar: [], baz: 42 } },
+        ),
       ).toEqual({
         foo: {
           bar: 'Expected string, received array',
@@ -130,8 +161,8 @@ describe('logger/utils', () => {
             z.object({ type: z.literal('foo') }),
             z.object({ type: z.literal('bar') }),
           ]),
-          { type: 'baz' }
-        )
+          { type: 'baz' },
+        ),
       ).toEqual({
         type: "Invalid discriminator value. Expected 'foo' | 'bar'",
       });
@@ -142,8 +173,8 @@ describe('logger/utils', () => {
             z.object({ type: z.literal('foo') }),
             z.object({ type: z.literal('bar') }),
           ]),
-          {}
-        )
+          {},
+        ),
       ).toEqual({
         type: "Invalid discriminator value. Expected 'foo' | 'bar'",
       });
@@ -154,8 +185,8 @@ describe('logger/utils', () => {
             z.object({ type: z.literal('foo') }),
             z.object({ type: z.literal('bar') }),
           ]),
-          42
-        )
+          42,
+        ),
       ).toBe('Expected object, received number');
     });
 
@@ -168,7 +199,7 @@ describe('logger/utils', () => {
             }),
           }),
         }),
-        { foo: { bar: { baz: 42 } } }
+        { foo: { bar: { baz: 42 } } },
       );
 
       expect(prepareError(err!)).toEqual({

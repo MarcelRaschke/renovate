@@ -1,32 +1,37 @@
+import querystring from 'node:querystring';
 import is from '@sindresorhus/is';
-import { load } from 'js-yaml';
 import { logger } from '../../../logger';
 import { coerceArray } from '../../../util/array';
 import { regEx } from '../../../util/regex';
-import { DockerDatasource } from '../../datasource/docker';
+import { parseSingleYaml } from '../../../util/yaml';
 import { GitTagsDatasource } from '../../datasource/git-tags';
 import { GithubTagsDatasource } from '../../datasource/github-tags';
 import { HelmDatasource } from '../../datasource/helm';
-import { splitImageParts } from '../dockerfile/extract';
-import type { PackageDependency, PackageFileContent } from '../types';
+import { getDep } from '../dockerfile/extract';
+import { isOCIRegistry, removeOCIPrefix } from '../helmv3/oci';
+import type {
+  ExtractConfig,
+  PackageDependency,
+  PackageFileContent,
+} from '../types';
 import type { HelmChart, Image, Kustomize } from './types';
 
 // URL specifications should follow the hashicorp URL format
 // https://github.com/hashicorp/go-getter#url-format
 const gitUrl = regEx(
-  /^(?:git::)?(?<url>(?:(?:(?:http|https|ssh):\/\/)?(?:.*@)?)?(?<path>(?:[^:/\s]+(?::[0-9]+)?[:/])?(?<project>[^/\s]+\/[^/\s]+)))(?<subdir>[^?\s]*)\?ref=(?<currentValue>.+)$/
+  /^(?:git::)?(?<url>(?:(?:(?:http|https|ssh):\/\/)?(?:.*@)?)?(?<path>(?:[^:/\s]+(?::[0-9]+)?[:/])?(?<project>[^/\s]+\/[^/\s]+)))(?<subdir>[^?\s]*)\?(?<queryString>.+)$/,
 );
 // regex to match URLs with ".git" delimiter
 const dotGitRegex = regEx(
-  /^(?:git::)?(?<url>(?:(?:(?:http|https|ssh):\/\/)?(?:.*@)?)?(?<path>(?:[^:/\s]+(?::[0-9]+)?[:/])?(?<project>[^?\s]*(\.git))))(?<subdir>[^?\s]*)\?ref=(?<currentValue>.+)$/
+  /^(?:git::)?(?<url>(?:(?:(?:http|https|ssh):\/\/)?(?:.*@)?)?(?<path>(?:[^:/\s]+(?::[0-9]+)?[:/])?(?<project>[^?\s]*(\.git))))(?<subdir>[^?\s]*)\?(?<queryString>.+)$/,
 );
 // regex to match URLs with "_git" delimiter
 const underscoreGitRegex = regEx(
-  /^(?:git::)?(?<url>(?:(?:(?:http|https|ssh):\/\/)?(?:.*@)?)?(?<path>(?:[^:/\s]+(?::[0-9]+)?[:/])?(?<project>[^?\s]*)(_git\/[^/\s]+)))(?<subdir>[^?\s]*)\?ref=(?<currentValue>.+)$/
+  /^(?:git::)?(?<url>(?:(?:(?:http|https|ssh):\/\/)?(?:.*@)?)?(?<path>(?:[^:/\s]+(?::[0-9]+)?[:/])?(?<project>[^?\s]*)(_git\/[^/\s]+)))(?<subdir>[^?\s]*)\?(?<queryString>.+)$/,
 );
 // regex to match URLs having an extra "//"
 const gitUrlWithPath = regEx(
-  /^(?:git::)?(?<url>(?:(?:(?:http|https|ssh):\/\/)?(?:.*@)?)?(?<path>(?:[^:/\s]+(?::[0-9]+)?[:/])(?<project>[^?\s]+)))(?:\/\/)(?<subdir>[^?\s]+)\?ref=(?<currentValue>.+)$/
+  /^(?:git::)?(?<url>(?:(?:(?:http|https|ssh):\/\/)?(?:.*@)?)?(?<path>(?:[^:/\s]+(?::[0-9]+)?[:/])(?<project>[^?\s]+)))(?:\/\/)(?<subdir>[^?\s]+)\?(?<queryString>.+)$/,
 );
 
 export function extractResource(base: string): PackageDependency | null {
@@ -46,10 +51,20 @@ export function extractResource(base: string): PackageDependency | null {
     return null;
   }
 
-  const { path } = match.groups;
+  const { path, queryString } = match.groups;
+  const params = querystring.parse(queryString);
+  const refParam = Array.isArray(params.ref) ? params.ref[0] : params.ref;
+  const versionParam = Array.isArray(params.version)
+    ? params.version[0]
+    : params.version;
+  const currentValue = refParam ?? versionParam;
+  if (!currentValue) {
+    return null;
+  }
+
   if (regEx(/(?:github\.com)(:|\/)/).test(path)) {
     return {
-      currentValue: match.groups.currentValue,
+      currentValue,
       datasource: GithubTagsDatasource.id,
       depName: match.groups.project.replace('.git', ''),
     };
@@ -59,21 +74,29 @@ export function extractResource(base: string): PackageDependency | null {
     datasource: GitTagsDatasource.id,
     depName: path.replace('.git', ''),
     packageName: match.groups.url,
-    currentValue: match.groups.currentValue,
+    currentValue,
   };
 }
 
-export function extractImage(image: Image): PackageDependency | null {
+export function extractImage(
+  image: Image,
+  aliases?: Record<string, string>,
+): PackageDependency | null {
   if (!image.name) {
     return null;
   }
-  const nameDep = splitImageParts(image.newName ?? image.name);
+  const nameToSplit = image.newName ?? image.name;
+  if (!is.string(nameToSplit)) {
+    logger.debug({ image }, 'Invalid image name');
+    return null;
+  }
+  const nameDep = getDep(nameToSplit, false, aliases);
   const { depName } = nameDep;
   const { digest, newTag } = image;
   if (digest && newTag) {
     logger.debug(
       { newTag, digest },
-      'Kustomize ignores newTag when digest is provided. Pick one, or use `newTag: tag@digest`'
+      'Kustomize ignores newTag when digest is provided. Pick one, or use `newTag: tag@digest`',
     );
     return {
       depName,
@@ -93,9 +116,7 @@ export function extractImage(image: Image): PackageDependency | null {
     }
 
     return {
-      datasource: DockerDatasource.id,
-      depName,
-      currentValue: nameDep.currentValue,
+      ...nameDep,
       currentDigest: digest,
       replaceString: digest,
     };
@@ -110,19 +131,18 @@ export function extractImage(image: Image): PackageDependency | null {
       };
     }
 
-    // TODO: types (#22198)
-    const dep = splitImageParts(`${depName}:${newTag}`);
+    const dep = getDep(`${depName}:${newTag}`, false, aliases);
     return {
       ...dep,
-      datasource: DockerDatasource.id,
       replaceString: newTag,
+      autoReplaceStringTemplate:
+        '{{newValue}}{{#if newDigest}}@{{newDigest}}{{/if}}',
     };
   }
 
   if (image.newName) {
     return {
       ...nameDep,
-      datasource: DockerDatasource.id,
       replaceString: image.newName,
     };
   }
@@ -131,10 +151,27 @@ export function extractImage(image: Image): PackageDependency | null {
 }
 
 export function extractHelmChart(
-  helmChart: HelmChart
+  helmChart: HelmChart,
+  aliases?: Record<string, string>,
 ): PackageDependency | null {
   if (!helmChart.name) {
     return null;
+  }
+
+  if (isOCIRegistry(helmChart.repo)) {
+    const dep = getDep(
+      `${removeOCIPrefix(helmChart.repo)}/${helmChart.name}:${helmChart.version}`,
+      false,
+      aliases,
+    );
+    return {
+      ...dep,
+      depName: helmChart.name,
+      packageName: dep.depName,
+      // https://github.com/helm/helm/issues/10312
+      // https://github.com/helm/helm/issues/10678
+      pinDigests: false,
+    };
   }
 
   return {
@@ -147,12 +184,13 @@ export function extractHelmChart(
 
 export function parseKustomize(
   content: string,
-  packageFile?: string
+  packageFile?: string,
 ): Kustomize | null {
   let pkg: Kustomize | null = null;
   try {
-    pkg = load(content, { json: true }) as Kustomize;
-  } catch (e) /* istanbul ignore next */ {
+    // TODO: use schema (#9610)
+    pkg = parseSingleYaml(content);
+  } catch /* istanbul ignore next */ {
     logger.debug({ packageFile }, 'Error parsing kustomize file');
     return null;
   }
@@ -172,9 +210,10 @@ export function parseKustomize(
 
 export function extractPackageFile(
   content: string,
-  packageFile?: string // TODO: fix tests
+  packageFile: string,
+  config: ExtractConfig,
 ): PackageFileContent | null {
-  logger.trace(`kustomize.extractPackageFile(${packageFile!})`);
+  logger.trace(`kustomize.extractPackageFile(${packageFile})`);
   const deps: PackageDependency[] = [];
 
   const pkg = parseKustomize(content, packageFile);
@@ -217,7 +256,7 @@ export function extractPackageFile(
 
   // grab the image tags
   for (const image of coerceArray(pkg.images)) {
-    const dep = extractImage(image);
+    const dep = extractImage(image, config.registryAliases);
     if (dep) {
       deps.push({
         ...dep,
@@ -228,7 +267,7 @@ export function extractPackageFile(
 
   // grab the helm charts
   for (const helmChart of coerceArray(pkg.helmCharts)) {
-    const dep = extractHelmChart(helmChart);
+    const dep = extractHelmChart(helmChart, config.registryAliases);
     if (dep) {
       deps.push({
         ...dep,

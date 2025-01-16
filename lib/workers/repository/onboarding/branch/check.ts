@@ -5,12 +5,14 @@ import {
   REPOSITORY_NO_CONFIG,
 } from '../../../../constants/error-messages';
 import { logger } from '../../../../logger';
-import { Pr, platform } from '../../../../modules/platform';
+import type { Pr } from '../../../../modules/platform';
+import { platform } from '../../../../modules/platform';
 import { ensureComment } from '../../../../modules/platform/comment';
 import { scm } from '../../../../modules/platform/scm';
 import { getCache } from '../../../../util/cache/repository';
 import { readLocalFile } from '../../../../util/fs';
 import { getBranchCommit } from '../../../../util/git';
+import { getSemanticCommitPrTitle } from '../common';
 
 async function findFile(fileName: string): Promise<boolean> {
   logger.debug(`findFile(${fileName})`);
@@ -35,24 +37,38 @@ async function packageJsonConfigExists(): Promise<boolean> {
     if (pJson.renovate) {
       return true;
     }
-  } catch (err) {
+  } catch {
     // Do nothing
   }
   return false;
 }
 
-function closedPrExists(config: RenovateConfig): Promise<Pr | null> {
-  return platform.findPr({
-    branchName: config.onboardingBranch!,
-    prTitle: config.onboardingPrTitle,
-    state: '!open',
-    targetBranch: config.baseBranch,
-  });
+async function closedPrExists(config: RenovateConfig): Promise<Pr | null> {
+  return (
+    (await platform.findPr({
+      branchName: config.onboardingBranch!,
+      prTitle: config.onboardingPrTitle,
+      state: '!open',
+      targetBranch: config.baseBranch,
+    })) ??
+    (await platform.findPr({
+      branchName: config.onboardingBranch!,
+      prTitle: getSemanticCommitPrTitle(config),
+      state: '!open',
+      targetBranch: config.baseBranch,
+    }))
+  );
 }
 
 export async function isOnboarded(config: RenovateConfig): Promise<boolean> {
   logger.debug('isOnboarded()');
   const title = `Action required: Add a Renovate config`;
+
+  // Repo is onboarded if in silent mode
+  if (config.mode === 'silent') {
+    logger.debug('Silent mode enabled so repo is considered onboarded');
+    return true;
+  }
 
   // Repo is onboarded if global config is bypassing onboarding and does not require a
   // configuration file.
@@ -89,7 +105,7 @@ export async function isOnboarded(config: RenovateConfig): Promise<boolean> {
     logger.debug('Checking cached config file name');
     try {
       const configFileContent = await platform.getJsonFile(
-        cache.configFileName
+        cache.configFileName,
       );
       if (configFileContent) {
         if (
@@ -99,12 +115,12 @@ export async function isOnboarded(config: RenovateConfig): Promise<boolean> {
           logger.debug('Existing config file confirmed');
           logger.debug(
             { fileName: cache.configFileName, config: configFileContent },
-            'Repository config'
+            'Repository config',
           );
           return true;
         }
       }
-    } catch (err) {
+    } catch {
       // probably file doesn't exist
     }
     logger.debug('Existing config file no longer exists');
@@ -149,10 +165,10 @@ export async function isOnboarded(config: RenovateConfig): Promise<boolean> {
 }
 
 export async function getOnboardingPr(
-  config: RenovateConfig
+  config: RenovateConfig,
 ): Promise<Pr | null> {
   return await platform.getBranchPr(
     config.onboardingBranch!,
-    config.baseBranch
+    config.baseBranch,
   );
 }

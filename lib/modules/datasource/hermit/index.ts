@@ -30,6 +30,10 @@ export class HermitDatasource extends Datasource {
     'https://github.com/cashapp/hermit-packages',
   ];
 
+  override readonly sourceUrlSupport = 'release';
+  override readonly sourceUrlNote =
+    'The source URL is determined from the `Repository` field in the results.';
+
   pathRegex: RegExp;
 
   constructor() {
@@ -39,9 +43,9 @@ export class HermitDatasource extends Datasource {
   }
 
   @cache({
-    namespace: `datasource-hermit-package`,
+    namespace: `datasource-${HermitDatasource.id}`,
     key: ({ registryUrl, packageName }: GetReleasesConfig) =>
-      `${registryUrl ?? ''}-${packageName}`,
+      `getReleases:${registryUrl ?? ''}-${packageName}`,
   })
   async getReleases({
     packageName,
@@ -75,7 +79,7 @@ export class HermitDatasource extends Datasource {
 
     if (!res) {
       logger.debug(
-        `Could not find hermit package ${packageName} at URL ${registryUrl}`
+        `Could not find hermit package ${packageName} at URL ${registryUrl}`,
       );
       return null;
     }
@@ -102,8 +106,8 @@ export class HermitDatasource extends Datasource {
    * named index, parses it and returned the parsed JSON result
    */
   @cache({
-    namespace: `datasource-hermit-search-manifest`,
-    key: (u) => u.toString(),
+    namespace: `datasource-${HermitDatasource.id}`,
+    key: (u) => `getHermitSearchManifest:${u.toString()}`,
   })
   async getHermitSearchManifest(u: URL): Promise<HermitSearchResult[] | null> {
     const registryUrl = u.toString();
@@ -112,7 +116,7 @@ export class HermitDatasource extends Datasource {
     if (!groups) {
       logger.warn(
         { registryUrl },
-        'failed to get owner and repo from given url'
+        'failed to get owner and repo from given url',
       );
       return null;
     }
@@ -122,18 +126,18 @@ export class HermitDatasource extends Datasource {
     const apiBaseUrl = getApiBaseUrl(`https://${host}`);
 
     const indexRelease = await this.http.getJson<GithubRestRelease>(
-      `${apiBaseUrl}repos/${owner}/${repo}/releases/tags/index`
+      `${apiBaseUrl}repos/${owner}/${repo}/releases/tags/index`,
     );
 
     // finds asset with name index.json
     const asset = indexRelease.body.assets.find(
-      (asset) => asset.name === 'index.json'
+      (asset) => asset.name === 'index.json',
     );
 
     if (!asset) {
       logger.warn(
         { registryUrl },
-        `can't find asset index.json in the given registryUrl`
+        `can't find asset index.json in the given registryUrl`,
       );
       return null;
     }
@@ -149,12 +153,12 @@ export class HermitDatasource extends Datasource {
         headers: {
           accept: 'application/octet-stream',
         },
-      })
+      }),
     );
 
     try {
       return JSON.parse(indexContent) as HermitSearchResult[];
-    } catch (e) {
+    } catch {
       logger.warn('error parsing hermit search manifest from remote respond');
     }
 

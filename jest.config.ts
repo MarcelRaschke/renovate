@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import os from 'node:os';
+import { env } from 'node:process';
 import v8 from 'node:v8';
 import { minimatch } from 'minimatch';
 import type { JestConfigWithTsJest } from 'ts-jest';
@@ -153,7 +154,7 @@ function normalizePattern(pattern: string, suffix: '.ts' | '.spec.ts'): string {
  * Otherwise, `fallback` value is used to determine some defaults.
  */
 function configureShardingOrFallbackTo(
-  fallback: JestShardedSubconfig
+  fallback: JestShardedSubconfig,
 ): JestShardedSubconfig {
   const shardKey = process.env.TEST_SHARD;
   if (!shardKey) {
@@ -163,7 +164,7 @@ function configureShardingOrFallbackTo(
   if (!testShards[shardKey]) {
     const keys = Object.keys(testShards).join(', ');
     throw new Error(
-      `Unknown value for TEST_SHARD: ${shardKey} (possible values: ${keys})`
+      `Unknown value for TEST_SHARD: ${shardKey} (possible values: ${keys})`,
     );
   }
 
@@ -205,13 +206,8 @@ const config: JestConfig = {
     '!lib/**/{__fixtures__,__mocks__,__testutil__,test}/**/*.{js,ts}',
     '!lib/**/types.ts',
   ],
-  coveragePathIgnorePatterns: [
-    '/node_modules/',
-    '<rootDir>/test/',
-    '<rootDir>/tools/',
-  ],
+  coveragePathIgnorePatterns: getCoverageIgnorePatterns(),
   cacheDirectory: '.cache/jest',
-  clearMocks: true,
   collectCoverage: true,
   coverageReporters: ci
     ? ['lcovonly', 'json']
@@ -232,6 +228,7 @@ const config: JestConfig = {
     '/__mocks__/',
   ],
   reporters: ci ? ['default', 'github-actions'] : ['default'],
+  resetMocks: true,
   setupFilesAfterEnv: [
     'jest-extended/all',
     'expect-more-jest',
@@ -288,6 +285,11 @@ interface ShardGroup {
    * It's used to set `--test-timeout` Jest CLI flag.
    */
   'test-timeout-milliseconds': number;
+
+  /**
+   * It's used as the name for coverage artifact.
+   */
+  'upload-artifact-name': string;
 }
 
 /**
@@ -301,7 +303,7 @@ function getMatchingShards(files: string[]): string[] {
       const patterns = matchPaths.map((path) =>
         path.endsWith('.spec.ts')
           ? path.replace(/\.spec\.ts$/, '{.ts,.spec.ts}')
-          : `${path}/**/*`
+          : `${path}/**/*`,
       );
 
       if (patterns.some((pattern) => minimatch(file, pattern))) {
@@ -326,7 +328,7 @@ function scheduleItems<T>(items: T[], availableInstances: number): T[][] {
       : items.length % numInstances;
 
   const partitionSizes = Array.from({ length: numInstances }, (_, idx) =>
-    idx < lighterInstancesIdx ? maxPerInstance : maxPerInstance - 1
+    idx < lighterInstancesIdx ? maxPerInstance : maxPerInstance - 1,
   );
 
   const result: T[][] = Array.from({ length: numInstances }, () => []);
@@ -383,7 +385,7 @@ if (process.env.SCHEDULE_TEST_SHARDS) {
   };
 
   if (process.env.ALL_PLATFORMS === 'true') {
-    shardGrouping['windows-latest'] = scheduleItems(shardKeys, 8);
+    // shardGrouping['windows-latest'] = scheduleItems(shardKeys, 8);
     shardGrouping['macos-latest'] = scheduleItems(shardKeys, 4);
   }
 
@@ -426,6 +428,7 @@ if (process.env.SCHEDULE_TEST_SHARDS) {
         'cache-key': cacheKey,
         'runner-timeout-minutes': runnerTimeoutMinutes,
         'test-timeout-milliseconds': testTimeoutMilliseconds,
+        'upload-artifact-name': `coverage-${shards.sort().join('_')}`,
       });
     }
   }
@@ -444,3 +447,12 @@ process.stderr.write(`Host stats:
     Memory:    ${(mem / 1024 / 1024 / 1024).toFixed(2)} GB
     HeapLimit: ${(stats.heap_size_limit / 1024 / 1024 / 1024).toFixed(2)} GB
   `);
+function getCoverageIgnorePatterns(): string[] | undefined {
+  const patterns = ['/node_modules/', '<rootDir>/test/', '<rootDir>/tools/'];
+
+  if (env.TEST_LEGACY_DECRYPTION !== 'true') {
+    patterns.push('<rootDir>/lib/config/decrypt/legacy.ts');
+  }
+
+  return patterns;
+}

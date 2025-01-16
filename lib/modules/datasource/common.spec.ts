@@ -3,6 +3,7 @@ import { defaultVersioning } from '../versioning';
 import {
   applyConstraintsFiltering,
   applyExtractVersion,
+  applyVersionCompatibility,
   filterValidVersions,
   getDatasourceFor,
   getDefaultVersioning,
@@ -21,7 +22,7 @@ describe('modules/datasource/common', () => {
 
     it('supports custom datasource', () => {
       expect(getDatasourceFor('custom.foobar')).toEqual(
-        getDatasourceFor(CustomDatasource.id)
+        getDatasourceFor(CustomDatasource.id),
       );
     });
 
@@ -41,7 +42,7 @@ describe('modules/datasource/common', () => {
       expect(getDefaultVersioning('foobar')).toBe(defaultVersioning.id);
       expect(logger.logger.warn).toHaveBeenCalledWith(
         { datasourceName: 'foobar' },
-        'Missing datasource!'
+        'Missing datasource!',
       );
     });
 
@@ -102,7 +103,10 @@ describe('modules/datasource/common', () => {
       };
       const res = applyExtractVersion(releaseResult, '^v(?<version>.+)$');
       expect(res).toEqual({
-        releases: [{ version: '1.0.0' }, { version: '2.0.0' }],
+        releases: [
+          { version: '1.0.0', versionOrig: 'v1.0.0' },
+          { version: '2.0.0', versionOrig: 'v2.0.0' },
+        ],
       });
     });
 
@@ -112,7 +116,7 @@ describe('modules/datasource/common', () => {
       };
       const result = applyExtractVersion(releaseResult, '^v(?<version>.+)$');
       expect(result).toEqual({
-        releases: [{ version: '1.0.0' }],
+        releases: [{ version: '1.0.0', versionOrig: 'v1.0.0' }],
       });
     });
   });
@@ -184,7 +188,7 @@ describe('modules/datasource/common', () => {
       });
       expect(logger.logger.warn).toHaveBeenCalledWith(
         { datasourceName: 'foobar' },
-        'Missing datasource!'
+        'Missing datasource!',
       );
     });
   });
@@ -217,12 +221,68 @@ describe('modules/datasource/common', () => {
       const releaseResult = {
         releases: [
           { version: '1.0.0' },
-          { version: '2.0.0', constraints: {} as never },
-          { version: '3.0.0', constraints: { baz: ['^0.9.0'] } },
+          { version: '2.0.0', constraints: { baz: [undefined] } as never },
+          { version: '3.0.0', constraints: { baz: ['^0.9.0', 'invalid'] } },
         ],
       };
       expect(applyConstraintsFiltering(releaseResult, config)).toEqual({
         releases: [{ version: '1.0.0' }, { version: '2.0.0' }],
+      });
+    });
+
+    it('should match exact constraints', () => {
+      const config = {
+        datasource: 'pypi',
+        packageName: 'bar',
+        versioning: 'pep440',
+        constraintsFiltering: 'strict' as const,
+        constraints: { python: '>=3.8' },
+      };
+      const releaseResult = {
+        releases: [
+          { version: '1.0.0', constraints: { python: ['^1.0.0'] } },
+          { version: '2.0.0', constraints: { python: ['>=3.8'] } },
+        ],
+      };
+      expect(applyConstraintsFiltering(releaseResult, config)).toEqual({
+        releases: [{ version: '2.0.0' }],
+      });
+    });
+  });
+
+  describe('applyVersionCompatibility', () => {
+    let input: ReleaseResult;
+
+    beforeEach(() => {
+      input = {
+        releases: [
+          { version: '1.0.0' },
+          { version: '2.0.0' },
+          { version: '2.0.0-alpine' },
+        ],
+      };
+    });
+
+    it('returns immediately if no versionCompatibility', () => {
+      const result = applyVersionCompatibility(input, undefined, undefined);
+      expect(result).toBe(input);
+    });
+
+    it('filters out non-matching', () => {
+      const versionCompatibility = '^(?<version>[^-]+)$';
+      expect(
+        applyVersionCompatibility(input, versionCompatibility, undefined),
+      ).toMatchObject({
+        releases: [{ version: '1.0.0' }, { version: '2.0.0' }],
+      });
+    });
+
+    it('filters out incompatible', () => {
+      const versionCompatibility = '^(?<version>[^-]+)(?<compatibility>.*)?$';
+      expect(
+        applyVersionCompatibility(input, versionCompatibility, '-alpine'),
+      ).toMatchObject({
+        releases: [{ version: '2.0.0' }],
       });
     });
   });

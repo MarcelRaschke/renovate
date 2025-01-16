@@ -8,6 +8,10 @@ Please give us enough time to investigate the bug before you report it anywhere 
 
 Please do not create GitHub issues for security-related doubts or problems.
 
+## Code of Conduct
+
+Please follow the rules in our [Code of Conduct](https://github.com/renovatebot/renovate/blob/main/CODE_OF_CONDUCT.md).
+
 ## Support
 
 If you want help with your Renovate configuration, go to the [discussions tab in the Renovate repository](https://github.com/renovatebot/renovate/discussions) and open a new "config help" discussion post.
@@ -31,14 +35,47 @@ Before you start any Pull Request, it's recommended that you open a [discussion]
 That way you can be sure that the maintainer(s) agree on what to change and how, and you can hopefully get a quick merge afterwards.
 Also, let the maintainers know that you plan to work on a particular issue so that no one else starts any duplicate work.
 
+### Tests
+
 Pull Requests can only be merged once all status checks are green, which means `pnpm test` passes, and coverage is 100%.
+
+Use these commands to help run your tests:
+
+- To run a single test folder, specify the path
+
+  ```bash
+  pnpm jest platform/gitlab
+  ```
+
+- To run against a single test file, specify down to the filename (suffix is not necessary)
+
+  ```bash
+  pnpm jest platform/gitlab/index
+  ```
+
+- To run a single test batch, the `-t` value must be part of the `describe` value of the test batch
+
+  ```bash
+  pnpm jest platform/gitlab/index -t "getJsonFile"
+  ```
+
+- To run a single test, the `-t` value must be part of the `it` value of the test batch
+
+  ```bash
+  pnpm jest platform/gitlab/index -t "returns file content from given repo"
+  ```
+
+And some options:
+
+- `--verbose=false` to avoid the test list
+- `--collectCoverage=false` to avoid collecting coverage, faster for the part you need the test to pass
 
 ## Do not force push to your pull request branch
 
 Please do not force push to your PR's branch after you have created your PR, as doing so forces us to review the whole PR again.
 This makes it harder for us to review your work because we don't know what has changed.
 PRs will always be squashed by us when we merge your work.
-Commit as many times as you need in your pull request branch.
+Commit as many times as you need in your pull request branch, but please batch apply review suggestions.
 
 If you're updating your PR branch from within the GitHub PR interface, use the default "Update branch" button.
 This is the "Update with merge commit" option in the dropdown.
@@ -50,7 +87,8 @@ Force pushing a PR, or using the "Update with rebase" button is OK when you:
 
 ## Apply maintainer provided review suggestions
 
-Maintainers can suggest changes while reviewing your pull request, please follow these steps to apply them:
+Maintainers can suggest changes while reviewing your pull request.
+To apply these suggestions, please:
 
 1. Batch the suggestions into a logical group by selecting the **Add suggestion to batch** button
 1. Select the **Commit suggestions** button
@@ -88,4 +126,4 @@ Important: this Slack group is restricted to development questions only in order
 Pull Request authors must sign the [Renovate CLA](https://cla-assistant.io/renovateapp/renovate).
 
 If you cannot or do not want to sign this CLA (e.g. your employment contract for your employer may not allow this), you should not submit a PR.
-Open an issue and someone else can do the work.
+Open a discussion and someone else can do the work.

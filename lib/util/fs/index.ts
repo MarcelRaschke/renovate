@@ -16,7 +16,7 @@ export function getParentDir(fileName: string): string {
 
 export function getSiblingFileName(
   fileName: string,
-  siblingName: string
+  siblingName: string,
 ): string {
   const subDirectory = getParentDir(fileName);
   return upath.join(subDirectory, siblingName);
@@ -25,11 +25,11 @@ export function getSiblingFileName(
 export async function readLocalFile(fileName: string): Promise<Buffer | null>;
 export async function readLocalFile(
   fileName: string,
-  encoding: 'utf8'
+  encoding: 'utf8',
 ): Promise<string | null>;
 export async function readLocalFile(
   fileName: string,
-  encoding?: BufferEncoding
+  encoding?: BufferEncoding,
 ): Promise<string | Buffer | null> {
   const localFileName = ensureLocalPath(fileName);
   try {
@@ -44,7 +44,7 @@ export async function readLocalFile(
 }
 
 export async function readLocalSymlink(
-  fileName: string
+  fileName: string,
 ): Promise<string | null> {
   const localFileName = ensureLocalPath(fileName);
   try {
@@ -58,7 +58,7 @@ export async function readLocalSymlink(
 
 export async function writeLocalFile(
   fileName: string,
-  fileContent: string | Buffer
+  fileContent: string | Buffer,
 ): Promise<void> {
   const localFileName = ensureLocalPath(fileName);
   await fs.outputFile(localFileName, fileContent);
@@ -78,7 +78,7 @@ export async function deleteLocalFile(fileName: string): Promise<void> {
 
 export async function renameLocalFile(
   fromFile: string,
-  toFile: string
+  toFile: string,
 ): Promise<void> {
   const fromPath = ensureLocalPath(fromFile);
   const toPath = ensureLocalPath(toFile);
@@ -119,7 +119,7 @@ export async function localPathExists(pathName: string): Promise<boolean> {
   try {
     const s = await fs.stat(path);
     return !!s;
-  } catch (_) {
+  } catch {
     return false;
   }
 }
@@ -141,7 +141,7 @@ export function isValidLocalPath(path: string): boolean {
  */
 export async function findLocalSiblingOrParent(
   existingFileNameWithPath: string,
-  otherFileName: string
+  otherFileName: string,
 ): Promise<string | null> {
   if (upath.isAbsolute(existingFileNameWithPath)) {
     return null;
@@ -176,24 +176,29 @@ export function createCacheWriteStream(path: string): fs.WriteStream {
   return fs.createWriteStream(fullPath);
 }
 
+export function createCacheReadStream(path: string): fs.ReadStream {
+  const fullPath = ensureCachePath(path);
+  return fs.createReadStream(fullPath);
+}
+
 export async function localPathIsFile(pathName: string): Promise<boolean> {
   const path = ensureLocalPath(pathName);
   try {
     const s = await fs.stat(path);
     return s.isFile();
-  } catch (_) {
+  } catch {
     return false;
   }
 }
 
 export async function localPathIsSymbolicLink(
-  pathName: string
+  pathName: string,
 ): Promise<boolean> {
   const path = ensureLocalPath(pathName);
   try {
     const s = await fs.lstat(path);
     return s.isSymbolicLink();
-  } catch (_) {
+  } catch {
     return false;
   }
 }
@@ -204,7 +209,7 @@ export async function localPathIsSymbolicLink(
 
 export async function findUpLocal(
   fileName: string | string[],
-  cwd: string
+  cwd: string,
 ): Promise<string | null> {
   const localDir = GlobalConfig.get('localDir');
   const absoluteCwd = upath.join(localDir, cwd);
@@ -232,26 +237,43 @@ export async function findUpLocal(
 
 export function chmodLocalFile(
   fileName: string,
-  mode: string | number
+  mode: string | number,
 ): Promise<void> {
   const fullFileName = ensureLocalPath(fileName);
   return fs.chmod(fullFileName, mode);
 }
 
 export async function statLocalFile(
-  fileName: string
+  fileName: string,
 ): Promise<fs.Stats | null> {
   const fullFileName = ensureLocalPath(fileName);
   try {
     return await fs.stat(fullFileName);
-  } catch (_) {
+  } catch {
     return null;
   }
 }
 
-export function listCacheDir(path: string): Promise<string[]> {
+export async function statCacheFile(
+  pathName: string,
+): Promise<fs.Stats | null> {
+  const path = ensureCachePath(pathName);
+  try {
+    return await fs.stat(path);
+  } catch {
+    return null;
+  }
+}
+
+export function listCacheDir(
+  path: string,
+  options: { recursive: boolean } = { recursive: false },
+): Promise<string[]> {
   const fullPath = ensureCachePath(path);
-  return fs.readdir(fullPath);
+  return fs.readdir(fullPath, {
+    encoding: 'utf-8',
+    recursive: options.recursive,
+  });
 }
 
 export async function rmCache(path: string): Promise<void> {
@@ -264,7 +286,17 @@ export async function cachePathExists(pathName: string): Promise<boolean> {
   try {
     const s = await fs.stat(path);
     return !!s;
-  } catch (_) {
+  } catch {
+    return false;
+  }
+}
+
+export async function cachePathIsFile(pathName: string): Promise<boolean> {
+  const path = ensureCachePath(pathName);
+  try {
+    const s = await fs.stat(path);
+    return s.isFile();
+  } catch {
     return false;
   }
 }
@@ -272,11 +304,11 @@ export async function cachePathExists(pathName: string): Promise<boolean> {
 export async function readCacheFile(fileName: string): Promise<Buffer>;
 export async function readCacheFile(
   fileName: string,
-  encoding: 'utf8'
+  encoding: 'utf8',
 ): Promise<string>;
 export function readCacheFile(
   fileName: string,
-  encoding?: BufferEncoding
+  encoding?: BufferEncoding,
 ): Promise<string | Buffer> {
   const fullPath = ensureCachePath(fileName);
   return encoding ? fs.readFile(fullPath, encoding) : fs.readFile(fullPath);
@@ -284,7 +316,7 @@ export function readCacheFile(
 
 export function outputCacheFile(
   file: string,
-  data: string | NodeJS.ArrayBufferView
+  data: string | NodeJS.ArrayBufferView,
 ): Promise<void> {
   const filePath = ensureCachePath(file);
   return fs.outputFile(filePath, data);
@@ -293,17 +325,24 @@ export function outputCacheFile(
 export async function readSystemFile(fileName: string): Promise<Buffer>;
 export async function readSystemFile(
   fileName: string,
-  encoding: 'utf8'
+  encoding: 'utf8',
 ): Promise<string>;
 export function readSystemFile(
   fileName: string,
-  encoding?: BufferEncoding
+  encoding?: BufferEncoding,
 ): Promise<string | Buffer> {
   return encoding ? fs.readFile(fileName, encoding) : fs.readFile(fileName);
 }
 
+export async function writeSystemFile(
+  fileName: string,
+  data: string | Buffer,
+): Promise<void> {
+  await fs.outputFile(fileName, data);
+}
+
 export async function getLocalFiles(
-  fileNames: string[]
+  fileNames: string[],
 ): Promise<Record<string, string | null>> {
   const fileContentMap: Record<string, string | null> = {};
 

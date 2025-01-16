@@ -6,7 +6,7 @@ description: Python/pip dependencies support in Renovate
 # Python package manager support
 
 Renovate supports several Python package managers, including `pip`, `pipenv`, `poetry`, etc.
-See [all supported managers](https://docs.renovatebot.com/modules/manager/).
+See [all supported managers](./modules/manager/index.md).
 
 ## Versioning support
 
@@ -23,23 +23,12 @@ Legacy versions with the `===` prefix are ignored.
 1. Renovate searches for the latest version on [PyPI](https://pypi.org/) to decide if there are upgrades
 1. If the source package includes a GitHub URL as its source, and has a "changelog" file _or_ uses GitHub releases, a Release Note will be embedded in the generated PR
 
-## Alternative file names
+## Package name matching
 
-For the `pip_requirements` manager, the default file matching regex for `requirements.txt` follows common file name conventions.
-
-It will match `requirements.txt` and `requirements.pip`, and any file in the format `requirements-*.txt` or `requirements-*.pip`, to allow for common filename patterns such as `requirements-dev.txt`.
-
-But Renovate may not find all your files.
-
-You can tell Renovate where to find your file(s) by setting your own `fileMatch` regex:
-
-```json
-{
-  "pip_requirements": {
-    "fileMatch": ["my/specifically-named.file", "\\.requirements$"]
-  }
-}
-```
+Your `matchPackageName` or `matchPackagePattern` rules will be matching against normalized names.
+So if you have specified package `some.package` or `ANOTHER_DEP` in your package files (`requirements.txt`, `pyproject.toml`), they will be treated as `some-package` and `another-dep` respecitvely.
+Not only they will be case insensitive but will replace any amount `._-` to a single `-`.
+[Consult Python packaging documentation for the specification](https://packaging.python.org/en/latest/specifications/name-normalization/).
 
 ## Alternate registries
 
@@ -55,9 +44,7 @@ There are three ways to do this:
 
 ### index-url in `requirements.txt`
 
-You can set the index URL in the first line of the `requirements.txt`, for example:
-
-```
+```title="Setting index URL in first line of requirements.txt"
 --index-url http://example.com/private-pypi/
 some-package==0.3.1
 some-other-package==1.0.0
@@ -73,14 +60,17 @@ Renovate detects any custom-configured sources in `pyproject.toml` and uses them
 
 ### Specify URL in configuration
 
-Create a `python` object and put a `registryUrls` array in it.
+Create a `packageRules` entry with `matchDatasources=pypi` and a `registryUrls` array.
 Fill the array with alternate index URL(s).
 
 ```json
 {
-  "python": {
-    "registryUrls": ["http://example.com/private-pypi/"]
-  }
+  "packageRules": [
+    {
+      "matchDatasources": ["pypi"],
+      "registryUrls": ["http://example.com/private-pypi/"]
+    }
+  ]
 }
 ```
 
@@ -92,9 +82,7 @@ Fill the array with alternate index URL(s).
 
 ## Disabling Python support
 
-To disable all managers with `language` set to `python` in Renovate, do this:
-
-```json
+```json title="Disabling all managers where language is set to Python"
 {
   "python": {
     "enabled": false
@@ -103,9 +91,8 @@ To disable all managers with `language` set to `python` in Renovate, do this:
 ```
 
 Alternatively, you can use `enabledManagers` to tell Renovate what package managers it can use.
-For example, if you only want to use Renovate's `npm` package manager:
 
-```json
+```json title="Only use Renovate's npm package manager"
 {
   "enabledManagers": ["npm"]
 }

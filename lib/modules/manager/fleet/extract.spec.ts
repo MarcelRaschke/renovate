@@ -3,7 +3,7 @@ import { extractPackageFile } from '.';
 
 const validFleetYaml = Fixtures.get('valid_fleet.yaml');
 const validFleetYamlWithCustom = Fixtures.get(
-  'valid_fleet_helm_target_customization.yaml'
+  'valid_fleet_helm_target_customization.yaml',
 );
 const inValidFleetYaml = Fixtures.get('invalid_fleet.yaml');
 
@@ -36,7 +36,7 @@ describe('modules/manager/fleet/extract', () => {
           `apiVersion: v1
 kind: Fleet
 < `,
-          'fleet.yaml'
+          'fleet.yaml',
         );
 
         expect(result).toBeNull();
@@ -61,13 +61,30 @@ kind: Fleet
             registryUrls: ['https://kubernetes-charts.banzaicloud.com'],
             depType: 'fleet',
           },
+          {
+            currentValue: '25.19.1',
+            datasource: 'helm',
+            depName: 'prometheus',
+            registryUrls: [
+              'https://prometheus-community.github.io/helm-charts',
+            ],
+            depType: 'fleet',
+          },
+          {
+            currentValue: '7.1.2',
+            datasource: 'docker',
+            depName: 'registry-1.docker.io/bitnamicharts/external-dns',
+            packageName: 'registry-1.docker.io/bitnamicharts/external-dns',
+            depType: 'fleet',
+            pinDigests: false,
+          },
         ]);
       });
 
       it('should parse valid configuration with target customization', () => {
         const result = extractPackageFile(
           validFleetYamlWithCustom,
-          'fleet.yaml'
+          'fleet.yaml',
         );
 
         expect(result).not.toBeNull();
@@ -162,7 +179,7 @@ kind: Fleet
           `apiVersion: v1
  kind: GitRepo
  < `,
-          'test.yaml'
+          'test.yaml',
         );
 
         expect(result).toBeNull();

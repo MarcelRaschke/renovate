@@ -1,11 +1,13 @@
 import is from '@sindresorhus/is';
 import type { PackageRule, PackageRuleInputConfig } from '../../config/types';
+import { isCustomManager } from '../../modules/manager/custom';
+import { matchRegexOrGlobList } from '../string-match';
 import { Matcher } from './base';
 
 export class ManagersMatcher extends Matcher {
   override matches(
     { manager }: PackageRuleInputConfig,
-    { matchManagers }: PackageRule
+    { matchManagers }: PackageRule,
   ): boolean | null {
     if (is.undefined(matchManagers)) {
       return null;
@@ -13,6 +15,9 @@ export class ManagersMatcher extends Matcher {
     if (is.undefined(manager) || !manager) {
       return false;
     }
-    return matchManagers.includes(manager);
+    if (isCustomManager(manager)) {
+      return matchRegexOrGlobList(`custom.${manager}`, matchManagers);
+    }
+    return matchRegexOrGlobList(manager, matchManagers);
   }
 }

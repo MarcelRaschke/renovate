@@ -4,11 +4,11 @@ import { emojify } from '../../../../util/emoji';
 import { regEx } from '../../../../util/regex';
 import type { BranchConfig } from '../../../types';
 
-export function getPrList(
+export function getExpectedPrList(
   config: RenovateConfig,
-  branches: BranchConfig[]
+  branches: BranchConfig[],
 ): string {
-  logger.debug('getPrList()');
+  logger.debug('getExpectedPrList()');
   logger.trace({ config });
   let prDesc = `\n### What to Expect\n\n`;
   if (!branches.length) {
@@ -22,7 +22,7 @@ export function getPrList(
     // TODO #22198
     prDesc += `<details>\n<summary>${branch.prTitle!.replace(
       prTitleRe,
-      '@&#8203;$1'
+      '@&#8203;$1',
     )}</summary>\n\n`;
     if (branch.schedule?.length) {
       prDesc += `  - Schedule: ${JSON.stringify(branch.schedule)}\n`;
@@ -70,7 +70,7 @@ export function getPrList(
     prHourlyLimit < branches.length
   ) {
     prDesc += emojify(
-      `<br />\n\n:children_crossing: Branch creation will be limited to maximum ${prHourlyLimit} per hour, so it doesn't swamp any CI resources or overwhelm the project. See docs for \`prhourlylimit\` for details.\n\n`
+      `\n\n:children_crossing: Branch creation will be limited to maximum ${prHourlyLimit} per hour, so it doesn't swamp any CI resources or overwhelm the project. See docs for \`prhourlylimit\` for details.\n\n`,
     );
   }
   return prDesc;

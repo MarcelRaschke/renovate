@@ -17,7 +17,7 @@ describe('modules/manager/bundler/host-rules', () => {
         getAuthenticationHeaderValue({
           username: 'test',
           password: 'password',
-        })
+        }),
       ).toBe('test:password');
     });
 
@@ -25,8 +25,17 @@ describe('modules/manager/bundler/host-rules', () => {
       expect(
         getAuthenticationHeaderValue({
           token: 'token',
-        })
+        }),
       ).toBe('token');
+    });
+
+    it('escapes special characters in the username but not the password', () => {
+      expect(
+        getAuthenticationHeaderValue({
+          username: 'test@example.com',
+          password: 'p@ssword',
+        }),
+      ).toBe('test%40example.com:p@ssword');
     });
   });
 
@@ -47,7 +56,7 @@ describe('modules/manager/bundler/host-rules', () => {
       delete hostRule.matchHost;
       add(hostRule);
       expect(
-        findAllAuthenticatable({ hostType: 'nuget' } as any)
+        findAllAuthenticatable({ hostType: 'nuget' } as any),
       ).toBeEmptyArray();
     });
 
@@ -57,7 +66,7 @@ describe('modules/manager/bundler/host-rules', () => {
 
       add(hostRule);
       expect(
-        findAllAuthenticatable({ hostType: 'nuget' } as any)
+        findAllAuthenticatable({ hostType: 'nuget' } as any),
       ).toBeEmptyArray();
     });
 
@@ -67,7 +76,7 @@ describe('modules/manager/bundler/host-rules', () => {
 
       add(hostRule);
       expect(
-        findAllAuthenticatable({ hostType: 'nuget' } as any)
+        findAllAuthenticatable({ hostType: 'nuget' } as any),
       ).toBeEmptyArray();
     });
 
@@ -76,7 +85,7 @@ describe('modules/manager/bundler/host-rules', () => {
 
       add(hostRule);
       expect(
-        findAllAuthenticatable({ hostType: 'nuget' } as any)
+        findAllAuthenticatable({ hostType: 'nuget' } as any),
       ).toMatchObject([hostRule]);
     });
 
@@ -85,7 +94,7 @@ describe('modules/manager/bundler/host-rules', () => {
 
       add(hostRule);
       expect(
-        findAllAuthenticatable({ hostType: 'nuget' } as any)
+        findAllAuthenticatable({ hostType: 'nuget' } as any),
       ).toMatchObject([hostRule]);
     });
 
@@ -94,7 +103,7 @@ describe('modules/manager/bundler/host-rules', () => {
 
       add(hostRule);
       expect(
-        findAllAuthenticatable({ hostType: 'nuget' } as any)
+        findAllAuthenticatable({ hostType: 'nuget' } as any),
       ).toMatchObject([hostRule]);
     });
 
@@ -103,7 +112,7 @@ describe('modules/manager/bundler/host-rules', () => {
 
       add(hostRule);
       expect(
-        findAllAuthenticatable({ hostType: 'nuget' } as any)
+        findAllAuthenticatable({ hostType: 'nuget' } as any),
       ).toMatchObject([hostRule]);
     });
   });

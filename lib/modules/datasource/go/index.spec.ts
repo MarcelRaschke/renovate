@@ -1,14 +1,16 @@
+import { mockDeep } from 'jest-mock-extended';
 import { Fixtures } from '../../../../test/fixtures';
 import * as httpMock from '../../../../test/http-mock';
 import { mocked } from '../../../../test/util';
 import * as _hostRules from '../../../util/host-rules';
 import { GoDatasource } from '.';
 
-jest.mock('../../../util/host-rules');
+jest.mock('../../../util/host-rules', () => mockDeep());
 const hostRules = mocked(_hostRules);
 
 const getReleasesDirectMock = jest.fn();
 
+const getDigestGiteaMock = jest.fn();
 const getDigestGithubMock = jest.fn();
 const getDigestGitlabMock = jest.fn();
 const getDigestGitMock = jest.fn();
@@ -18,6 +20,7 @@ jest.mock('./releases-direct', () => {
     GoDirectDatasource: jest.fn().mockImplementation(() => {
       return {
         git: { getDigest: (...args: any[]) => getDigestGitMock(...args) },
+        gitea: { getDigest: (...args: any[]) => getDigestGiteaMock(...args) },
         github: { getDigest: (...args: any[]) => getDigestGithubMock(...args) },
         gitlab: { getDigest: (...args: any[]) => getDigestGitlabMock(...args) },
         bitbucket: {
@@ -70,13 +73,8 @@ describe('modules/datasource/go/index', () => {
 
   describe('getDigest', () => {
     beforeEach(() => {
-      jest.resetAllMocks();
       hostRules.find.mockReturnValue({});
       hostRules.hosts.mockReturnValue([]);
-    });
-
-    afterEach(() => {
-      jest.resetAllMocks();
     });
 
     it('returns null for no go-source tag', async () => {
@@ -86,7 +84,7 @@ describe('modules/datasource/go/index', () => {
         .reply(200, '');
       const res = await datasource.getDigest(
         { packageName: 'golang.org/y/text' },
-        null
+        undefined,
       );
       expect(res).toBeNull();
     });
@@ -98,7 +96,7 @@ describe('modules/datasource/go/index', () => {
         .reply(200, Fixtures.get('go-get-github.html'));
       const res = await datasource.getDigest(
         { packageName: 'golang.org/y/text' },
-        null
+        undefined,
       );
       expect(res).toBeNull();
     });
@@ -111,7 +109,7 @@ describe('modules/datasource/go/index', () => {
       getDigestGitlabMock.mockResolvedValue('abcdefabcdefabcdefabcdef');
       const res = await datasource.getDigest(
         { packageName: 'gitlab.com/group/subgroup' },
-        null
+        undefined,
       );
       expect(res).toBe('abcdefabcdefabcdefabcdef');
     });
@@ -124,7 +122,7 @@ describe('modules/datasource/go/index', () => {
       getDigestGitMock.mockResolvedValue('abcdefabcdefabcdefabcdef');
       const res = await datasource.getDigest(
         { packageName: 'renovatebot.com/abc/def' },
-        null
+        undefined,
       );
       expect(res).toBe('abcdefabcdefabcdefabcdef');
     });
@@ -138,7 +136,7 @@ describe('modules/datasource/go/index', () => {
       getDigestGitlabMock.mockResolvedValue('abcdefabcdefabcdefabcdef');
       const res = await datasource.getDigest(
         { packageName: 'gitlab.com/group/subgroup' },
-        branch
+        branch,
       );
       expect(res).toBe('abcdefabcdefabcdefabcdef');
     });
@@ -151,7 +149,7 @@ describe('modules/datasource/go/index', () => {
       getDigestGithubMock.mockResolvedValueOnce('abcdefabcdefabcdefabcdef');
       const res = await datasource.getDigest(
         { packageName: 'golang.org/x/text' },
-        'v1.2.3'
+        'v1.2.3',
       );
       expect(res).toBe('abcdefabcdefabcdefabcdef');
       expect(getDigestGithubMock).toHaveBeenCalledWith(
@@ -160,7 +158,7 @@ describe('modules/datasource/go/index', () => {
           packageName: 'golang/text',
           registryUrl: 'https://github.com',
         },
-        'v1.2.3'
+        'v1.2.3',
       );
     });
 
@@ -172,7 +170,7 @@ describe('modules/datasource/go/index', () => {
       getDigestGithubMock.mockResolvedValueOnce('abcdefabcdefabcdefabcdef');
       const res = await datasource.getDigest(
         { packageName: 'golang.org/x/text' },
-        'v0.0.0'
+        'v0.0.0',
       );
       expect(res).toBe('abcdefabcdefabcdefabcdef');
       expect(getDigestGithubMock).toHaveBeenCalledWith(
@@ -181,7 +179,7 @@ describe('modules/datasource/go/index', () => {
           packageName: 'golang/text',
           registryUrl: 'https://github.com',
         },
-        undefined
+        undefined,
       );
     });
 
@@ -191,11 +189,35 @@ describe('modules/datasource/go/index', () => {
         {
           packageName: 'bitbucket.org/golang/text',
         },
-        null
+        undefined,
       );
-      expect(res).toMatchSnapshot();
-      expect(res).not.toBeNull();
-      expect(res).toBeDefined();
+      expect(res).toBe('123');
+    });
+
+    it('support gitea digest', async () => {
+      getDigestGiteaMock.mockResolvedValueOnce('123');
+      const res = await datasource.getDigest(
+        {
+          packageName: 'gitea.com/go-chi/cache',
+        },
+        undefined,
+      );
+      expect(res).toBe('123');
+    });
+
+    describe('GOPROXY', () => {
+      afterEach(() => {
+        delete process.env.GOPROXY;
+      });
+
+      it('returns null when GOPROXY contains off', async () => {
+        process.env.GOPROXY = 'https://proxy.golang.org,off';
+        const res = await datasource.getDigest(
+          { packageName: 'golang.org/x/text' },
+          'v1.2.3',
+        );
+        expect(res).toBeNull();
+      });
     });
   });
 });

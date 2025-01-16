@@ -1,10 +1,13 @@
 import is from '@sindresorhus/is';
-import type { UpdateType } from '../../config/types';
+import { supportedDatasources as presetSupportedDatasources } from '../../config/presets/internal/merge-confidence';
+import type { AllConfig, UpdateType } from '../../config/types';
 import { logger } from '../../logger';
 import { ExternalHostError } from '../../types/errors/external-host-error';
 import * as packageCache from '../cache/package';
 import * as hostRules from '../host-rules';
 import { Http } from '../http';
+import { regEx } from '../regex';
+import { ensureTrailingSlash, joinUrlParts } from '../url';
 import { MERGE_CONFIDENCE } from './common';
 import type { MergeConfidence } from './types';
 
@@ -12,8 +15,7 @@ const hostType = 'merge-confidence';
 const http = new Http(hostType);
 let token: string | undefined;
 let apiBaseUrl: string | undefined;
-
-const supportedDatasources = ['npm', 'maven', 'pypi'];
+let supportedDatasources: string[] = [];
 
 export const confidenceLevels: Record<MergeConfidence, number> = {
   low: -1,
@@ -22,9 +24,16 @@ export const confidenceLevels: Record<MergeConfidence, number> = {
   'very high': 2,
 };
 
-export function initConfig(): void {
-  apiBaseUrl = getApiBaseUrl();
+export function initConfig({
+  mergeConfidenceEndpoint,
+  mergeConfidenceDatasources,
+}: AllConfig): void {
+  apiBaseUrl = getApiBaseUrl(mergeConfidenceEndpoint);
   token = getApiToken();
+
+  supportedDatasources =
+    mergeConfidenceDatasources ?? presetSupportedDatasources;
+
   if (!is.nullOrUndefined(token)) {
     logger.debug(`Merge confidence token found for ${apiBaseUrl}`);
   }
@@ -33,6 +42,7 @@ export function initConfig(): void {
 export function resetConfig(): void {
   token = undefined;
   apiBaseUrl = undefined;
+  supportedDatasources = [];
 }
 
 export function isMergeConfidence(value: string): value is MergeConfidence {
@@ -45,7 +55,7 @@ export function isActiveConfidenceLevel(confidence: string): boolean {
 
 export function satisfiesConfidenceLevel(
   confidence: MergeConfidence,
-  minimumConfidence: MergeConfidence
+  minimumConfidence: MergeConfidence,
 ): boolean {
   return confidenceLevels[confidence] >= confidenceLevels[minimumConfidence];
 }
@@ -82,7 +92,7 @@ export async function getMergeConfidenceLevel(
   packageName: string,
   currentVersion: string,
   newVersion: string,
-  updateType: UpdateType
+  updateType: UpdateType,
 ): Promise<MergeConfidence | undefined> {
   if (is.nullOrUndefined(apiBaseUrl) || is.nullOrUndefined(token)) {
     return undefined;
@@ -122,15 +132,22 @@ async function queryApi(
   datasource: string,
   packageName: string,
   currentVersion: string,
-  newVersion: string
+  newVersion: string,
 ): Promise<MergeConfidence> {
   // istanbul ignore if: defensive, already been validated before calling this function
   if (is.nullOrUndefined(apiBaseUrl) || is.nullOrUndefined(token)) {
     return 'neutral';
   }
 
-  const escapedPackageName = packageName.replace('/', '%2f');
-  const url = `${apiBaseUrl}api/mc/json/${datasource}/${escapedPackageName}/${currentVersion}/${newVersion}`;
+  const escapedPackageName = packageName.replace(regEx(/\//g), '%2f');
+  const url = joinUrlParts(
+    apiBaseUrl,
+    'api/mc/json',
+    datasource,
+    escapedPackageName,
+    currentVersion,
+    newVersion,
+  );
   const cacheKey = `${token}:${url}`;
   const cachedResult = await packageCache.get(hostType, cacheKey);
 
@@ -144,7 +161,7 @@ async function queryApi(
         newVersion,
         cachedResult,
       },
-      'using merge confidence cached result'
+      'using merge confidence cached result',
     );
     return cachedResult;
   }
@@ -175,45 +192,43 @@ async function queryApi(
  * authenticate with the API. If either the base URL or token is not defined, it will immediately return
  * without making a request.
  */
-export async function initMergeConfidence(): Promise<void> {
-  initConfig();
+export async function initMergeConfidence(config: AllConfig): Promise<void> {
+  initConfig(config);
 
   if (is.nullOrUndefined(apiBaseUrl) || is.nullOrUndefined(token)) {
     logger.trace('merge confidence API usage is disabled');
     return;
   }
 
-  const url = `${apiBaseUrl}api/mc/availability`;
+  const url = joinUrlParts(apiBaseUrl, 'api/mc/availability');
   try {
     await http.get(url);
   } catch (err) {
     apiErrorHandler(err);
   }
 
-  logger.debug('merge confidence API - successfully authenticated');
+  logger.debug(
+    { supportedDatasources },
+    'merge confidence API - successfully authenticated',
+  );
   return;
 }
 
-function getApiBaseUrl(): string {
+function getApiBaseUrl(mergeConfidenceEndpoint: string | undefined): string {
   const defaultBaseUrl = 'https://developer.mend.io/';
-  const baseFromEnv = process.env.RENOVATE_X_MERGE_CONFIDENCE_API_BASE_URL;
-
-  if (is.nullOrUndefined(baseFromEnv)) {
-    logger.trace('using default merge confidence API base URL');
-    return defaultBaseUrl;
-  }
+  const baseFromEnv = mergeConfidenceEndpoint ?? defaultBaseUrl;
 
   try {
     const parsedBaseUrl = new URL(baseFromEnv).toString();
     logger.trace(
       { baseUrl: parsedBaseUrl },
-      'using merge confidence API base found in environment variables'
+      'using merge confidence API base found in environment variables',
     );
-    return parsedBaseUrl;
+    return ensureTrailingSlash(parsedBaseUrl);
   } catch (err) {
     logger.warn(
       { err, baseFromEnv },
-      'invalid merge confidence API base URL found in environment variables - using default value instead'
+      'invalid merge confidence API base URL found in environment variables - using default value instead',
     );
     return defaultBaseUrl;
   }

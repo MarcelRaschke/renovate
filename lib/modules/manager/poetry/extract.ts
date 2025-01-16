@@ -7,17 +7,18 @@ import {
   readLocalFile,
 } from '../../../util/fs';
 import { Result } from '../../../util/result';
+import { GithubReleasesDatasource } from '../../datasource/github-releases';
 import type { PackageFileContent } from '../types';
 import { Lockfile, PoetrySchemaToml } from './schema';
 
 export async function extractPackageFile(
   content: string,
-  packageFile: string
+  packageFile: string,
 ): Promise<PackageFileContent | null> {
   logger.trace(`poetry.extractPackageFile(${packageFile})`);
   const { val: res, err } = Result.parse(
     content,
-    PoetrySchemaToml.transform(({ packageFileContent }) => packageFileContent)
+    PoetrySchemaToml.transform(({ packageFileContent }) => packageFileContent),
   ).unwrap();
   if (err) {
     logger.debug({ packageFile, err }, `Poetry: error parsing pyproject.toml`);
@@ -28,8 +29,8 @@ export async function extractPackageFile(
   const lockContents = (await readLocalFile(lockfileName, 'utf8'))!;
   const lockfileMapping = Result.parse(
     lockContents,
-    Lockfile.transform(({ lock }) => lock)
-  ).unwrapOrElse({});
+    Lockfile.transform(({ lock }) => lock),
+  ).unwrapOr({});
 
   let pythonVersion: string | undefined;
   filterMap(res.deps, (dep) => {
@@ -37,7 +38,15 @@ export async function extractPackageFile(
       if (dep.currentValue) {
         pythonVersion = dep.currentValue;
       }
-      return null;
+      return {
+        ...dep,
+        // We use containerbase python as source, as there are a lot docker tags which can cause
+        // issues with poetry versioning.
+        packageName: 'containerbase/python-prebuild',
+        datasource: GithubReleasesDatasource.id,
+        commitMessageTopic: 'Python',
+        registryUrls: null,
+      };
     }
 
     const packageName = dep.packageName ?? dep.depName;

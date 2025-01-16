@@ -7,15 +7,19 @@ import { HOST_DISABLED } from '../../../constants/error-messages';
 import { logger } from '../../../logger';
 import { ExternalHostError } from '../../../types/errors/external-host-error';
 import * as packageCache from '../../../util/cache/package';
+import * as hostRules from '../../../util/host-rules';
 import type { Http } from '../../../util/http';
 import type { HttpOptions } from '../../../util/http/types';
 import { regEx } from '../../../util/regex';
+import { HttpCacheStats } from '../../../util/stats';
 import { joinUrlParts } from '../../../util/url';
 import type { Release, ReleaseResult } from '../types';
 import type { CachedReleaseResult, NpmResponse } from './types';
 
+export const CACHE_REVISION = 1;
+
 const SHORT_REPO_REGEX = regEx(
-  /^((?<platform>bitbucket|github|gitlab):)?(?<shortRepo>[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)$/
+  /^((?<platform>bitbucket|github|gitlab):)?(?<shortRepo>[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)$/,
 );
 
 const platformMapping: Record<string, string> = {
@@ -70,7 +74,7 @@ const PackageSource = z
 export async function getDependency(
   http: Http,
   registryUrl: string,
-  packageName: string
+  packageName: string,
 ): Promise<ReleaseResult | null> {
   logger.trace(`npm.getDependency(${packageName})`);
 
@@ -80,32 +84,38 @@ export async function getDependency(
   const cacheNamespace = 'datasource-npm:data';
   const cachedResult = await packageCache.get<CachedReleaseResult>(
     cacheNamespace,
-    packageUrl
+    packageUrl,
   );
-  if (cachedResult) {
-    if (cachedResult.cacheData) {
+  if (cachedResult?.cacheData) {
+    if (cachedResult.cacheData.revision === CACHE_REVISION) {
       const softExpireAt = DateTime.fromISO(
-        cachedResult.cacheData.softExpireAt
+        cachedResult.cacheData.softExpireAt,
       );
       if (softExpireAt.isValid && softExpireAt > DateTime.local()) {
         logger.trace('Cached result is not expired - reusing');
+        HttpCacheStats.incLocalHits(packageUrl);
         delete cachedResult.cacheData;
         return cachedResult;
       }
+
       logger.trace('Cached result is soft expired');
+      HttpCacheStats.incLocalMisses(packageUrl);
     } else {
-      logger.trace('Reusing legacy cached result');
-      return cachedResult;
+      logger.trace(
+        `Package cache for npm package "${packageName}" is from an old revision - discarding`,
+      );
+      delete cachedResult.cacheData;
     }
   }
-  const cacheMinutes = process.env.RENOVATE_CACHE_NPM_MINUTES
-    ? parseInt(process.env.RENOVATE_CACHE_NPM_MINUTES, 10)
-    : 15;
-  const softExpireAt = DateTime.local()
-    .plus({ minutes: cacheMinutes })
-    .toISO()!;
+  const cacheMinutes = 15;
+  const softExpireAt = DateTime.local().plus({ minutes: cacheMinutes }).toISO();
   let cacheHardTtlMinutes = GlobalConfig.get('cacheHardTtlMinutes');
-  if (!(is.number(cacheHardTtlMinutes) && cacheHardTtlMinutes > cacheMinutes)) {
+  if (
+    !(
+      is.number(cacheHardTtlMinutes) &&
+      /* istanbul ignore next: needs test */ cacheHardTtlMinutes > cacheMinutes
+    )
+  ) {
     cacheHardTtlMinutes = cacheMinutes;
   }
 
@@ -117,19 +127,38 @@ export async function getDependency(
       logger.trace({ packageName }, 'Using cached etag');
       options.headers = { 'If-None-Match': cachedResult.cacheData.etag };
     }
+
+    // set abortOnError for registry.npmjs.org if no hostRule with explicit abortOnError exists
+    if (
+      registryUrl === 'https://registry.npmjs.org' &&
+      hostRules.find({ url: 'https://registry.npmjs.org' })?.abortOnError ===
+        undefined
+    ) {
+      logger.trace(
+        { packageName, registry: 'https://registry.npmjs.org' },
+        'setting abortOnError hostRule for well known host',
+      );
+      hostRules.add({
+        matchHost: 'https://registry.npmjs.org',
+        abortOnError: true,
+      });
+    }
+
     const raw = await http.getJson<NpmResponse>(packageUrl, options);
     if (cachedResult?.cacheData && raw.statusCode === 304) {
       logger.trace(`Cached npm result for ${packageName} is revalidated`);
+      HttpCacheStats.incRemoteHits(packageUrl);
       cachedResult.cacheData.softExpireAt = softExpireAt;
       await packageCache.set(
         cacheNamespace,
         packageUrl,
         cachedResult,
-        cacheHardTtlMinutes
+        cacheHardTtlMinutes,
       );
       delete cachedResult.cacheData;
       return cachedResult;
     }
+    HttpCacheStats.incRemoteMisses(packageUrl);
     const etag = raw.headers.etag;
     const res = raw.body;
     if (!res.versions || !Object.keys(res.versions).length) {
@@ -190,6 +219,9 @@ export async function getDependency(
       ) {
         release.sourceDirectory = source.sourceDirectory;
       }
+      if (dep.deprecationMessage) {
+        release.isDeprecated = true;
+      }
       return release;
     });
     logger.trace({ dep }, 'dep');
@@ -199,41 +231,46 @@ export async function getDependency(
       regEx(/(^|,)\s*public\s*(,|$)/).test(cacheControl)
     ) {
       dep.isPrivate = false;
-      const cacheData = { softExpireAt, etag };
+      const cacheData = { revision: CACHE_REVISION, softExpireAt, etag };
       await packageCache.set(
         cacheNamespace,
         packageUrl,
         { ...dep, cacheData },
-        etag ? cacheHardTtlMinutes : cacheMinutes
+        etag
+          ? /* istanbul ignore next: needs test */ cacheHardTtlMinutes
+          : cacheMinutes,
       );
     } else {
       dep.isPrivate = true;
     }
     return dep;
   } catch (err) {
+    const actualError = err instanceof ExternalHostError ? err.err : err;
     const ignoredStatusCodes = [401, 402, 403, 404];
     const ignoredResponseCodes = ['ENOTFOUND'];
     if (
-      err.message === HOST_DISABLED ||
-      ignoredStatusCodes.includes(err.statusCode) ||
-      ignoredResponseCodes.includes(err.code)
+      actualError.message === HOST_DISABLED ||
+      ignoredStatusCodes.includes(actualError.statusCode) ||
+      ignoredResponseCodes.includes(actualError.code)
     ) {
       return null;
     }
-    if (uri.host === 'registry.npmjs.org') {
+
+    if (err instanceof ExternalHostError) {
       if (cachedResult) {
         logger.warn(
-          { err },
-          'npmjs error, reusing expired cached result instead'
+          { err, host: uri.host },
+          `npm host error, reusing expired cached result instead`,
         );
         delete cachedResult.cacheData;
         return cachedResult;
       }
-      // istanbul ignore if
-      if (err.name === 'ParseError' && err.body) {
-        err.body = 'err.body deleted by Renovate';
+
+      if (actualError.name === 'ParseError' && actualError.body) {
+        actualError.body = 'err.body deleted by Renovate';
+        err.err = actualError;
       }
-      throw new ExternalHostError(err);
+      throw err;
     }
     logger.debug({ err }, 'Unknown npm lookup error');
     return null;

@@ -21,6 +21,14 @@ export class GithubReleasesDatasource extends Datasource {
 
   override http: GithubHttp;
 
+  override readonly releaseTimestampSupport = true;
+  // Note: not sure
+  override readonly releaseTimestampNote =
+    'The release timestamp is determined from the `releaseTimestamp` field from the response.';
+  override readonly sourceUrlSupport = 'package';
+  override readonly sourceUrlNote =
+    'The source URL is determined by using the `packageName` and `registryUrl`.';
+
   constructor() {
     super(GithubReleasesDatasource.id);
     this.http = new GithubHttp(GithubReleasesDatasource.id);
@@ -43,11 +51,11 @@ export class GithubReleasesDatasource extends Datasource {
       currentDigest,
       registryUrl,
     }: DigestConfig,
-    newValue: string
+    newValue: string,
   ): Promise<string | null> {
     logger.debug(
       { repo, currentValue, currentDigest, registryUrl, newValue },
-      'getDigest'
+      'getDigest',
     );
 
     return findCommitOfTag(registryUrl, repo, newValue, this.http);

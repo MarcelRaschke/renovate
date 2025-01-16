@@ -1,0 +1,37 @@
+name: trivy
+
+on:
+  # schedule:
+  #   - cron: '59 11 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    strategy:
+      matrix:
+        tag:
+          - latest
+          - full
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          show-progress: false
+
+      - uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # 0.29.0
+        with:
+          image-ref: ghcr.io/renovatebot/renovate:${{ matrix.tag }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - uses: github/codeql-action/upload-sarif@b6a472f63d85b9c78a3ac5e89422239fc15e9b3c # v3.28.1
+        with:
+          sarif_file: trivy-results.sarif
+          category: 'docker-image-${{ matrix.tag }}'

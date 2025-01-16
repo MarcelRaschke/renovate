@@ -10,10 +10,10 @@ const lineTerminationRegex = regEx(`\r?\n`);
 const releaseBeginningChar = '\t{';
 const releaseTerminationChar = '\t},';
 const releaseDateRegex = regEx(
-  `Date\\{(?<year>\\d+),\\s+(?<month>\\d+),\\s+(?<day>\\d+)\\}`
+  `Date\\{(?<year>\\d+),\\s+(?<month>\\d+),\\s+(?<day>\\d+)\\}`,
 );
 const releaseVersionRegex = regEx(
-  `Version\\{(?<versionMajor>\\d+),\\s+(?<versionMinor>\\d+),\\s+(?<patch>\\d+)\\}`
+  `Version\\{(?<versionMajor>\\d+),\\s+(?<versionMinor>\\d+),\\s+(?<patch>\\d+)\\}`,
 );
 const releaseFutureRegex = regEx(`Future:\\s+true`);
 
@@ -32,6 +32,13 @@ export class GolangVersionDatasource extends Datasource {
 
   override readonly defaultVersioning = semverVersioningId;
 
+  override readonly releaseTimestampSupport = true;
+  override readonly releaseTimestampNote =
+    'The release timestamp is determined from the `Date` field in the results.';
+  override readonly sourceUrlSupport = 'package';
+  override readonly sourceUrlNote =
+    'We use the URL: https://github.com/golang/go.';
+
   @cache({ namespace: `datasource-${GolangVersionDatasource.id}`, key: 'all' })
   async getReleases({
     registryUrl,
@@ -49,7 +56,7 @@ export class GolangVersionDatasource extends Datasource {
 
     const golangVersionsUrl = joinUrlParts(
       registryUrl,
-      '/HEAD/internal/history/release.go'
+      '/HEAD/internal/history/release.go',
     );
 
     const response = await this.http.get(golangVersionsUrl);
@@ -59,7 +66,7 @@ export class GolangVersionDatasource extends Datasource {
     const startOfReleases = lines.indexOf('var Releases = []*Release{');
     if (startOfReleases === -1) {
       throw new ExternalHostError(
-        new Error('Invalid file - could not find the Releases section')
+        new Error('Invalid file - could not find the Releases section'),
       );
     }
 
@@ -76,7 +83,9 @@ export class GolangVersionDatasource extends Datasource {
       if (line === releaseBeginningChar) {
         if (release.version !== undefined) {
           throw new ExternalHostError(
-            new Error('Invalid file - unexpected error while parsing a release')
+            new Error(
+              'Invalid file - unexpected error while parsing a release',
+            ),
           );
         }
       } else if (line === releaseTerminationChar) {
@@ -85,7 +94,7 @@ export class GolangVersionDatasource extends Datasource {
         } else {
           if (release.version === undefined) {
             throw new ExternalHostError(
-              new Error('Invalid file - release has empty version')
+              new Error('Invalid file - release has empty version'),
             );
           }
           res.releases.push(release as Release);
@@ -109,7 +118,7 @@ export class GolangVersionDatasource extends Datasource {
           release.version = `${releaseVersionMatch.groups.versionMajor}.${releaseVersionMatch.groups.versionMinor}.${releaseVersionMatch.groups.patch}`;
           if (!isVersion(release.version)) {
             throw new ExternalHostError(
-              new Error(`Version ${release.version} is not a valid semver`)
+              new Error(`Version ${release.version} is not a valid semver`),
             );
           }
         }
@@ -118,7 +127,7 @@ export class GolangVersionDatasource extends Datasource {
 
     if (res.releases.length === 0) {
       throw new ExternalHostError(
-        new Error(`Invalid file - zero releases extracted`)
+        new Error(`Invalid file - zero releases extracted`),
       );
     }
 

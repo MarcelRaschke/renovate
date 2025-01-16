@@ -8,6 +8,7 @@ import type { RepoInitConfig } from '../../../workers/repository/init/types';
 import type { PrBlockedBy } from '../../../workers/types';
 
 export interface BaseBranchCache {
+  revision?: number;
   sha: string; // branch commit sha
   configHash: string; // object hash of config
   extractionFingerprints: Record<string, string | undefined>; // matching manager fingerprints
@@ -40,6 +41,11 @@ export interface OnboardingBranchCache {
   isModified: boolean;
   configFileName?: string;
   configFileParsed?: string;
+}
+
+export interface ReconfigureBranchCache {
+  reconfigureBranchSha: string;
+  isConfigValid: boolean;
 }
 
 export interface PrCache {
@@ -77,7 +83,7 @@ export interface BranchCache {
    */
   branchName: string;
   /**
-   * Whether the update branch is behind base branh
+   * Whether the update branch is behind base branch
    */
   isBehindBase?: boolean;
   /**
@@ -119,16 +125,31 @@ export interface BranchCache {
 
 export interface RepoCacheData {
   configFileName?: string;
+  httpCache?: Record<string, unknown>;
   semanticCommits?: 'enabled' | 'disabled';
   branches?: BranchCache[];
   init?: RepoInitConfig;
   scan?: Record<string, BaseBranchCache>;
   lastPlatformAutomergeFailure?: string;
   platform?: {
-    github?: Record<string, unknown>;
+    gitea?: {
+      pullRequestsCache?: unknown;
+    };
+    github?: {
+      /**
+       * To avoid circular dependency problem, we use `unknown` type here.
+       */
+      pullRequestsCache?: unknown;
+      graphqlPageCache?: unknown;
+      issuesCache?: Record<number, unknown>;
+    };
+    bitbucket?: {
+      pullRequestsCache?: unknown;
+    };
   };
   prComments?: Record<number, Record<string, string>>;
   onboardingBranchCache?: OnboardingBranchCache;
+  reconfigureBranchCache?: ReconfigureBranchCache;
 }
 
 export interface RepoCache {

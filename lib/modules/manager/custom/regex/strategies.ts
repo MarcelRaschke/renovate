@@ -1,10 +1,10 @@
 import is from '@sindresorhus/is';
 import { regEx } from '../../../../util/regex';
 import type { PackageDependency } from '../../types';
+import { checkIsValidDependency } from '../utils';
 import type { RecursionParameter, RegexManagerConfig } from './types';
 import {
   createDependency,
-  isValidDependency,
   mergeExtractionTemplate,
   mergeGroups,
   regexMatchAll,
@@ -12,8 +12,8 @@ import {
 
 export function handleAny(
   content: string,
-  _packageFile: string,
-  config: RegexManagerConfig
+  packageFile: string,
+  config: RegexManagerConfig,
 ): PackageDependency[] {
   return config.matchStrings
     .map((matchString) => regEx(matchString, 'g'))
@@ -26,17 +26,19 @@ export function handleAny(
             /* istanbul ignore next: can this happen? */ {},
           replaceString: matchResult[0],
         },
-        config
-      )
+        config,
+      ),
     )
     .filter(is.truthy)
-    .filter(isValidDependency);
+    .filter((dep: PackageDependency) =>
+      checkIsValidDependency(dep, packageFile, 'regex'),
+    );
 }
 
 export function handleCombination(
   content: string,
-  _packageFile: string,
-  config: RegexManagerConfig
+  packageFile: string,
+  config: RegexManagerConfig,
 ): PackageDependency[] {
   const matches = config.matchStrings
     .map((matchString) => regEx(matchString, 'g'))
@@ -50,23 +52,25 @@ export function handleCombination(
     .map((match) => ({
       groups: match.groups ?? /* istanbul ignore next: can this happen? */ {},
       replaceString:
-        match?.groups?.currentValue ?? match?.groups?.currentDigest
+        (match?.groups?.currentValue ?? match?.groups?.currentDigest)
           ? match[0]
           : undefined,
     }))
     .reduce((base, addition) => mergeExtractionTemplate(base, addition));
   return [createDependency(extraction, config)]
     .filter(is.truthy)
-    .filter(isValidDependency);
+    .filter((dep: PackageDependency) =>
+      checkIsValidDependency(dep, packageFile, 'regex'),
+    );
 }
 
 export function handleRecursive(
   content: string,
   packageFile: string,
-  config: RegexManagerConfig
+  config: RegexManagerConfig,
 ): PackageDependency[] {
   const regexes = config.matchStrings.map((matchString) =>
-    regEx(matchString, 'g')
+    regEx(matchString, 'g'),
   );
 
   return processRecursive({
@@ -78,7 +82,9 @@ export function handleRecursive(
     regexes,
   })
     .filter(is.truthy)
-    .filter(isValidDependency);
+    .filter((dep: PackageDependency) =>
+      checkIsValidDependency(dep, packageFile, 'regex'),
+    );
 }
 
 function processRecursive(parameters: RecursionParameter): PackageDependency[] {
@@ -96,7 +102,7 @@ function processRecursive(parameters: RecursionParameter): PackageDependency[] {
         groups: combinedGroups,
         replaceString: content,
       },
-      config
+      config,
     );
     return result ? [result] : /* istanbul ignore next: can this happen? */ [];
   }

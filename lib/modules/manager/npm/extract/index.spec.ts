@@ -1,13 +1,13 @@
+import { codeBlock } from 'common-tags';
+import { extractAllPackageFiles } from '..';
 import { Fixtures } from '../../../../../test/fixtures';
 import { fs } from '../../../../../test/util';
 import { logger } from '../../../../logger';
 import type { ExtractConfig } from '../../types';
+import { postExtract } from './post';
 import * as npmExtract from '.';
 
 jest.mock('../../../../util/fs');
-const realFs = jest.requireActual<typeof import('../../../../util/fs')>(
-  '../../../../util/fs'
-);
 
 const defaultExtractConfig = {
   skipInstalls: null,
@@ -17,17 +17,13 @@ const input01Content = Fixtures.get('inputs/01.json', '..');
 const input02Content = Fixtures.get('inputs/02.json', '..');
 const input01GlobContent = Fixtures.get('inputs/01-glob.json', '..');
 const workspacesContent = Fixtures.get('inputs/workspaces.json', '..');
-const workspacesSimpleContent = Fixtures.get(
-  'inputs/workspaces-simple.json',
-  '..'
-);
 const vendorisedContent = Fixtures.get('is-object.json', '..');
 const invalidNameContent = Fixtures.get('invalid-name.json', '..');
 
 describe('modules/manager/npm/extract/index', () => {
   describe('.extractPackageFile()', () => {
     beforeEach(() => {
-      jest.resetAllMocks();
+      const realFs = jest.requireActual<typeof fs>('../../../../util/fs');
       fs.readLocalFile.mockResolvedValue(null);
       fs.localPathExists.mockResolvedValue(false);
       fs.getSiblingFileName.mockImplementation(realFs.getSiblingFileName);
@@ -37,7 +33,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         'not json',
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toBeNull();
     });
@@ -46,7 +42,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         invalidNameContent,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchSnapshot({
         deps: [{ skipReason: 'invalid-name' }],
@@ -57,7 +53,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         vendorisedContent,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toBeNull();
     });
@@ -67,8 +63,8 @@ describe('modules/manager/npm/extract/index', () => {
         npmExtract.extractPackageFile(
           '{ "renovate": {} }',
           'backend/package.json',
-          defaultExtractConfig
-        )
+          defaultExtractConfig,
+        ),
       ).rejects.toThrow();
     });
 
@@ -76,7 +72,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         '{ "renovate": {} }',
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toBeNull();
     });
@@ -85,7 +81,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         '{"dependencies": true, "devDependencies": []}',
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toBeNull();
     });
@@ -94,7 +90,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input01Content,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchSnapshot({
         deps: [
@@ -121,7 +117,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input01GlobContent,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res?.deps).toHaveLength(13);
       expect(res).toMatchSnapshot({
@@ -156,7 +152,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input01Content,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchSnapshot({
         managerData: {
@@ -178,10 +174,10 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input01Content,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(logger.warn).toHaveBeenCalledWith(
-        'Updating multiple npm lock files is deprecated and support will be removed in future versions.'
+        'Updating multiple npm lock files is deprecated and support will be removed in future versions.',
       );
       expect(res).toMatchObject({
         managerData: {
@@ -201,7 +197,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input01Content,
         'package.json',
-        {}
+        {},
       );
       expect(res?.npmrc).toBe('save-exact = true\n');
     });
@@ -211,7 +207,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input01Content,
         'package.json',
-        { ...defaultExtractConfig, npmrc: 'config-npmrc' }
+        { ...defaultExtractConfig, npmrc: 'config-npmrc' },
       );
       expect(res?.npmrc).toBe('config-npmrc');
     });
@@ -226,7 +222,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input01Content,
         'package.json',
-        { npmrc: 'config-npmrc' }
+        { npmrc: 'config-npmrc' },
       );
       expect(res?.npmrc).toBe('config-npmrc');
     });
@@ -241,7 +237,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input01Content,
         'package.json',
-        { npmrc: 'config-npmrc', npmrcMerge: true }
+        { npmrc: 'config-npmrc', npmrcMerge: true },
       );
       expect(res?.npmrc).toBe(`config-npmrc\nrepo-npmrc\n`);
     });
@@ -250,7 +246,7 @@ describe('modules/manager/npm/extract/index', () => {
       fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
         if (fileName === '.npmrc') {
           return Promise.resolve(
-            'registry=https://registry.npmjs.org\n//registry.npmjs.org/:_authToken=${NPM_AUTH_TOKEN}\n'
+            'registry=https://registry.npmjs.org\n//registry.npmjs.org/:_authToken=${NPM_AUTH_TOKEN}\n',
           );
         }
         return Promise.resolve(null);
@@ -258,16 +254,25 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input01Content,
         'package.json',
-        {}
+        {},
       );
       expect(res?.npmrc).toBe('registry=https://registry.npmjs.org\n');
     });
 
     it('reads registryUrls from .yarnrc.yml', async () => {
+      fs.findLocalSiblingOrParent.mockImplementation(
+        (packageFile, otherFile): Promise<string | null> => {
+          if (packageFile === 'package.json' && otherFile === '.yarnrc.yml') {
+            return Promise.resolve('.yarnrc.yml');
+          }
+          return Promise.resolve(null);
+        },
+      );
+
       fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
         if (fileName === '.yarnrc.yml') {
           return Promise.resolve(
-            'npmRegistryServer: https://registry.example.com'
+            'npmRegistryServer: https://registry.example.com',
           );
         }
         return Promise.resolve(null);
@@ -275,138 +280,81 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input02Content,
         'package.json',
-        {}
+        {},
       );
       expect(
-        res?.deps.flatMap((dep) => dep.registryUrls)
+        res?.deps.flatMap((dep) => dep.registryUrls),
       ).toBeArrayIncludingOnly(['https://registry.example.com']);
     });
 
     it('reads registryUrls from .yarnrc', async () => {
+      fs.findLocalSiblingOrParent.mockImplementation(
+        (packageFile, otherFile): Promise<string | null> => {
+          if (packageFile === 'package.json' && otherFile === '.yarnrc') {
+            return Promise.resolve('.yarnrc');
+          }
+          return Promise.resolve(null);
+        },
+      );
+
       fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
         if (fileName === '.yarnrc') {
           return Promise.resolve('registry "https://registry.example.com"');
         }
         return Promise.resolve(null);
       });
+
       const res = await npmExtract.extractPackageFile(
         input02Content,
         'package.json',
-        {}
+        {},
       );
       expect(
-        res?.deps.flatMap((dep) => dep.registryUrls)
+        res?.deps.flatMap((dep) => dep.registryUrls),
       ).toBeArrayIncludingOnly(['https://registry.example.com']);
     });
 
-    it('finds lerna', async () => {
-      fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
-        if (fileName === 'lerna.json') {
-          return Promise.resolve('{}');
-        }
-        return Promise.resolve(null);
-      });
-      const res = await npmExtract.extractPackageFile(
-        input01Content,
-        'package.json',
-        defaultExtractConfig
-      );
-      expect(res).toMatchSnapshot({
-        managerData: {
-          lernaClient: 'npm',
-          lernaJsonFile: 'lerna.json',
-          lernaPackages: undefined,
+    it('resolves registry URLs using the package name if set', async () => {
+      fs.findLocalSiblingOrParent.mockImplementation(
+        (packageFile, otherFile): Promise<string | null> => {
+          if (packageFile === 'package.json' && otherFile === '.yarnrc.yml') {
+            return Promise.resolve('.yarnrc.yml');
+          }
+          return Promise.resolve(null);
         },
-      });
-    });
+      );
 
-    it('finds "npmClient":"npm" in lerna.json', async () => {
       fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
-        if (fileName === 'lerna.json') {
-          return Promise.resolve('{ "npmClient": "npm" }');
+        if (fileName === '.yarnrc.yml') {
+          return Promise.resolve(codeBlock`
+            npmScopes:
+              yarnpkg:
+                  npmRegistryServer: https://registry.example.com
+          `);
         }
         return Promise.resolve(null);
       });
       const res = await npmExtract.extractPackageFile(
-        input01Content,
+        '{"packageManager": "yarn@4.1.1"}',
         'package.json',
-        defaultExtractConfig
+        {},
       );
-      expect(res).toMatchSnapshot({
-        managerData: {
-          lernaClient: 'npm',
-          lernaJsonFile: 'lerna.json',
-          lernaPackages: undefined,
-        },
-      });
-    });
-
-    it('finds "npmClient":"yarn" in lerna.json', async () => {
-      fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
-        if (fileName === 'lerna.json') {
-          return Promise.resolve('{ "npmClient": "yarn" }');
-        }
-        return Promise.resolve(null);
-      });
-      const res = await npmExtract.extractPackageFile(
-        input01Content,
-        'package.json',
-        defaultExtractConfig
-      );
-      expect(res).toMatchSnapshot({
-        managerData: {
-          lernaClient: 'yarn',
-          lernaJsonFile: 'lerna.json',
-          lernaPackages: undefined,
-        },
-      });
-    });
-
-    it('finds simple yarn workspaces', async () => {
-      fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
-        if (fileName === 'lerna.json') {
-          return Promise.resolve('{}');
-        }
-        return Promise.resolve(null);
-      });
-      const res = await npmExtract.extractPackageFile(
-        workspacesSimpleContent,
-        'package.json',
-        defaultExtractConfig
-      );
-      expect(res).toMatchSnapshot({
-        managerData: { workspacesPackages: ['packages/*'] },
-      });
-    });
-
-    it('finds simple yarn workspaces with lerna.json and useWorkspaces: true', async () => {
-      fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
-        if (fileName === 'lerna.json') {
-          return Promise.resolve('{"useWorkspaces": true}');
-        }
-        return Promise.resolve(null);
-      });
-      const res = await npmExtract.extractPackageFile(
-        workspacesSimpleContent,
-        'package.json',
-        defaultExtractConfig
-      );
-      expect(res).toMatchSnapshot({
-        managerData: { workspacesPackages: ['packages/*'] },
-      });
+      expect(res?.deps).toEqual([
+        expect.objectContaining({
+          depName: 'yarn',
+          registryUrls: ['https://registry.example.com'],
+        }),
+      ]);
     });
 
     it('finds complex yarn workspaces', async () => {
       fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
-        if (fileName === 'lerna.json') {
-          return Promise.resolve('{}');
-        }
         return Promise.resolve(null);
       });
       const res = await npmExtract.extractPackageFile(
         workspacesContent,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchSnapshot({
         managerData: { workspacesPackages: ['packages/*'] },
@@ -439,7 +387,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         pJsonStr,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchSnapshot({
         extractedConstraints: {
@@ -447,7 +395,6 @@ describe('modules/manager/npm/extract/index', () => {
           npm: '^8.0.0',
           pnpm: '^1.2.0',
           vscode: '>=1.49.3',
-          yarn: 'disabled',
         },
         deps: [
           { depName: 'angular', currentValue: '1.6.0' },
@@ -473,8 +420,7 @@ describe('modules/manager/npm/extract/index', () => {
           {
             depName: 'node',
             currentValue: '>= 8.9.2',
-            datasource: 'github-tags',
-            versioning: 'node',
+            datasource: 'node-version',
             depType: 'engines',
           },
           {
@@ -524,7 +470,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         pJsonStr,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchSnapshot({
         deps: [
@@ -561,7 +507,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         pJsonStr,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchSnapshot({
         deps: [
@@ -569,12 +515,10 @@ describe('modules/manager/npm/extract/index', () => {
           {
             commitMessageTopic: 'Node.js',
             currentValue: '8.9.2',
-            datasource: 'github-tags',
+            datasource: 'node-version',
             depName: 'node',
             depType: 'volta',
-            packageName: 'nodejs/node',
             prettyDepType: 'volta',
-            versioning: 'node',
           },
           {
             commitMessageTopic: 'Yarn',
@@ -604,7 +548,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         pJsonStr,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
 
       expect(res).toMatchObject({
@@ -613,12 +557,10 @@ describe('modules/manager/npm/extract/index', () => {
           {
             commitMessageTopic: 'Node.js',
             currentValue: '16.0.0',
-            datasource: 'github-tags',
+            datasource: 'node-version',
             depName: 'node',
             depType: 'volta',
-            packageName: 'nodejs/node',
             prettyDepType: 'volta',
-            versioning: 'node',
           },
           {
             commitMessageTopic: 'Yarn',
@@ -652,13 +594,15 @@ describe('modules/manager/npm/extract/index', () => {
           n: 'git+https://github.com/owner/n#v2.0.0',
           o: 'git@github.com:owner/o.git#v2.0.0',
           p: 'Owner/P.git#v2.0.0',
+          q: 'github:owner/q#semver:1.1.0',
+          r: 'github:owner/r#semver:^1.0.0',
         },
       };
       const pJsonStr = JSON.stringify(pJson);
       const res = await npmExtract.extractPackageFile(
         pJsonStr,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchSnapshot({
         deps: [
@@ -749,6 +693,73 @@ describe('modules/manager/npm/extract/index', () => {
             datasource: 'github-tags',
             sourceUrl: 'https://github.com/Owner/P',
           },
+          {
+            depName: 'q',
+            currentValue: '1.1.0',
+            datasource: 'github-tags',
+            sourceUrl: 'https://github.com/owner/q',
+          },
+          {
+            depName: 'r',
+            currentValue: '^1.0.0',
+            datasource: 'github-tags',
+            sourceUrl: 'https://github.com/owner/r',
+          },
+        ],
+      });
+    });
+
+    it('does not set registryUrls for non-npmjs', async () => {
+      fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
+        if (fileName === '.yarnrc.yml') {
+          return Promise.resolve(
+            'npmRegistryServer: https://registry.example.com',
+          );
+        }
+        return Promise.resolve(null);
+      });
+      const pJson = {
+        dependencies: {
+          a: 'github:owner/a#v1.1.0',
+        },
+        engines: {
+          node: '8.9.2',
+        },
+        volta: {
+          yarn: '3.2.4',
+        },
+      };
+      const pJsonStr = JSON.stringify(pJson);
+      const res = await npmExtract.extractPackageFile(
+        pJsonStr,
+        'package.json',
+        defaultExtractConfig,
+      );
+      expect(res).toMatchObject({
+        deps: [
+          {
+            depName: 'a',
+            currentValue: 'v1.1.0',
+            datasource: 'github-tags',
+            sourceUrl: 'https://github.com/owner/a',
+          },
+          {
+            commitMessageTopic: 'Node.js',
+            currentValue: '8.9.2',
+            datasource: 'node-version',
+            depName: 'node',
+            depType: 'engines',
+            prettyDepType: 'engine',
+          },
+          {
+            commitMessageTopic: 'Yarn',
+            currentValue: '3.2.4',
+            datasource: 'npm',
+            depName: 'yarn',
+            depType: 'volta',
+            prettyDepType: 'volta',
+            packageName: '@yarnpkg/cli',
+          },
         ],
       });
     });
@@ -764,25 +775,55 @@ describe('modules/manager/npm/extract/index', () => {
         dependencies: {
           a: 'npm:foo@1',
           b: 'npm:@foo/bar@1.2.3',
-          c: 'npm:foo',
+          c: 'npm:^1.2.3',
+          d: 'npm:1.2.3',
+          e: 'npm:1.x.x',
+          f: 'npm:foo',
+          g: 'npm:@foo/@bar/@1.2.3',
         },
       };
       const pJsonStr = JSON.stringify(pJson);
       const res = await npmExtract.extractPackageFile(
         pJsonStr,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
+      );
+      expect(logger.debug).toHaveBeenCalledWith(
+        'Invalid npm package alias for dependency: "g":"npm:@foo/@bar/@1.2.3"',
       );
       expect(res).toMatchSnapshot({
         deps: [
           { packageName: 'foo' },
           { packageName: '@foo/bar' },
-          { depName: 'c' },
+          { packageName: 'c', currentValue: '^1.2.3' },
+          { packageName: 'd', currentValue: '1.2.3' },
+          { packageName: 'e', currentValue: '1.x.x' },
+          {
+            packageName: 'f',
+            currentValue: 'foo',
+            npmPackageAlias: true,
+            skipReason: 'unspecified-version',
+          },
+          {
+            depName: 'g',
+            currentValue: 'npm:@foo/@bar/@1.2.3',
+            npmPackageAlias: true,
+            skipReason: 'unspecified-version',
+          },
         ],
       });
     });
 
     it('sets skipInstalls false if Yarn zero-install is used', async () => {
+      fs.findLocalSiblingOrParent.mockImplementation(
+        (packageFile, otherFile): Promise<string | null> => {
+          if (packageFile === 'package.json' && otherFile === '.yarnrc.yml') {
+            return Promise.resolve('.yarnrc.yml');
+          }
+          return Promise.resolve(null);
+        },
+      );
+
       fs.readLocalFile.mockImplementation((fileName): Promise<any> => {
         if (fileName === 'yarn.lock') {
           return Promise.resolve('# yarn.lock');
@@ -796,7 +837,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         input01Content,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchSnapshot();
     });
@@ -809,7 +850,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         pJsonStr,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchSnapshot({
         extractedConstraints: { yarn: '3.0.0' },
@@ -851,7 +892,7 @@ describe('modules/manager/npm/extract/index', () => {
       const res = await npmExtract.extractPackageFile(
         content,
         'package.json',
-        defaultExtractConfig
+        defaultExtractConfig,
       );
       expect(res).toMatchObject({
         deps: [
@@ -905,15 +946,95 @@ describe('modules/manager/npm/extract/index', () => {
         ],
       });
     });
+
+    it('extracts dependencies from pnpm.overrides', async () => {
+      const content = `{
+        "devDependencies": {
+          "@types/react": "18.0.5"
+        },
+        "pnpm": {
+          "overrides": {
+            "node": "8.9.2",
+            "@types/react": "18.0.5",
+            "baz": {
+              "node": "8.9.2",
+              "bar": {
+                "foo": "1.0.0"
+              }
+            },
+            "foo2": {
+              ".": "1.0.0",
+              "bar2": "1.0.0"
+            },
+            "emptyObject":{}
+          }
+        }
+      }`;
+      const res = await npmExtract.extractPackageFile(
+        content,
+        'package.json',
+        defaultExtractConfig,
+      );
+      expect(res).toMatchObject({
+        deps: [
+          {
+            depType: 'devDependencies',
+            depName: '@types/react',
+            currentValue: '18.0.5',
+            datasource: 'npm',
+            prettyDepType: 'devDependency',
+          },
+          {
+            depType: 'pnpm.overrides',
+            depName: 'node',
+            currentValue: '8.9.2',
+            datasource: 'npm',
+            commitMessageTopic: 'Node.js',
+            prettyDepType: 'overrides',
+          },
+          {
+            depType: 'pnpm.overrides',
+            depName: '@types/react',
+            currentValue: '18.0.5',
+            datasource: 'npm',
+            prettyDepType: 'overrides',
+          },
+          {
+            depName: 'node',
+            managerData: { parents: ['baz'] },
+            commitMessageTopic: 'Node.js',
+            currentValue: '8.9.2',
+            datasource: 'npm',
+          },
+          {
+            depName: 'foo',
+            managerData: { parents: ['baz', 'bar'] },
+            currentValue: '1.0.0',
+            datasource: 'npm',
+          },
+          {
+            depName: 'foo2',
+            managerData: { parents: ['foo2'] },
+            currentValue: '1.0.0',
+            datasource: 'npm',
+          },
+          {
+            depName: 'bar2',
+            managerData: { parents: ['foo2'] },
+            currentValue: '1.0.0',
+            datasource: 'npm',
+          },
+        ],
+      });
+    });
   });
 
   describe('.extractAllPackageFiles()', () => {
     it('runs', async () => {
       fs.readLocalFile.mockResolvedValueOnce(input02Content);
-      const res = await npmExtract.extractAllPackageFiles(
-        defaultExtractConfig,
-        ['package.json']
-      );
+      const res = await extractAllPackageFiles(defaultExtractConfig, [
+        'package.json',
+      ]);
       expect(res).toEqual([
         {
           deps: [
@@ -931,13 +1052,18 @@ describe('modules/manager/npm/extract/index', () => {
               depType: 'dependencies',
               prettyDepType: 'dependency',
             },
+            {
+              currentValue: '0.7.0',
+              datasource: 'npm',
+              depName: 'express>cookie',
+              packageName: 'cookie',
+              depType: 'pnpm.overrides',
+              prettyDepType: 'overrides',
+            },
           ],
           extractedConstraints: {},
           managerData: {
             hasPackageManager: false,
-            lernaClient: undefined,
-            lernaJsonFile: undefined,
-            lernaPackages: undefined,
             npmLock: undefined,
             packageJsonName: 'renovate',
             pnpmShrinkwrap: undefined,
@@ -956,7 +1082,7 @@ describe('modules/manager/npm/extract/index', () => {
 
   describe('.postExtract()', () => {
     it('runs', async () => {
-      await expect(npmExtract.postExtract([])).resolves.not.toThrow();
+      await expect(postExtract([])).resolves.not.toThrow();
     });
   });
 });

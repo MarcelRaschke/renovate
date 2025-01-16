@@ -17,7 +17,7 @@ import type { BranchConfig, BranchUpgradeConfig } from '../types';
 import { getPrCache } from './update/pr/pr-cache';
 
 function generateBranchUpgradeCache(
-  upgrade: BranchUpgradeConfig
+  upgrade: BranchUpgradeConfig,
 ): BranchUpgradeCache {
   const {
     datasource,
@@ -61,7 +61,7 @@ function generateBranchUpgradeCache(
 }
 
 async function generateBranchCache(
-  branch: BranchConfig
+  branch: BranchConfig,
 ): Promise<BranchCache | null> {
   const { baseBranch, branchName, prBlockedBy, prTitle, result } = branch;
   try {
@@ -83,15 +83,18 @@ async function generateBranchCache(
           branchName,
           branchSha,
           baseBranch,
-          baseBranchSha
+          baseBranchSha,
         ) ?? undefined;
       isConflicted =
         getCachedConflictResult(
           branchName,
           branchSha,
           baseBranch,
-          baseBranchSha
+          baseBranchSha,
         ) ?? undefined;
+    } else if (baseBranchSha && !branchSha && branch.prNo) {
+      // if branch was deleted/ PR exists and ignored
+      prNo = branch.prNo;
     }
 
     const automerge = !!branch.automerge;

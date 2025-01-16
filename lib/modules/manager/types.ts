@@ -1,16 +1,22 @@
 import type { ReleaseType } from 'semver';
 import type {
   MatchStringsStrategy,
-  RegexManagerTemplates,
   UpdateType,
+  UserEnv,
   ValidationMessage,
 } from '../../config/types';
 import type { Category } from '../../constants';
-import type { ModuleApi, RangeStrategy, SkipReason } from '../../types';
+import type {
+  ModuleApi,
+  RangeStrategy,
+  SkipReason,
+  StageName,
+} from '../../types';
 import type { FileChange } from '../../util/git/types';
 import type { MergeConfidence } from '../../util/merge-confidence/types';
+import type { CustomExtractConfig } from './custom/types';
 
-export type Result<T> = T | Promise<T>;
+export type MaybePromise<T> = T | Promise<T>;
 
 export interface ManagerData<T> {
   managerData?: T;
@@ -21,12 +27,7 @@ export interface ExtractConfig extends CustomExtractConfig {
   npmrc?: string;
   npmrcMerge?: boolean;
   skipInstalls?: boolean | null;
-}
-
-export interface CustomExtractConfig extends RegexManagerTemplates {
-  autoReplaceStringTemplate?: string;
-  matchStrings?: string[];
-  matchStringsStrategy?: MatchStringsStrategy;
+  repository?: string;
 }
 
 export interface UpdateArtifactsConfig {
@@ -43,6 +44,8 @@ export interface UpdateArtifactsConfig {
   newVersion?: string;
   newMajor?: number;
   registryAliases?: Record<string, string>;
+  lockFiles?: string[];
+  env?: UserEnv;
 }
 
 export interface RangeConfig<T = Record<string, any>> extends ManagerData<T> {
@@ -88,8 +91,9 @@ export interface LookupUpdate {
   newDigest?: string;
   newMajor?: number;
   newMinor?: number;
+  newPatch?: number;
   newName?: string;
-  newValue: string;
+  newValue?: string;
   semanticCommitType?: string;
   pendingChecks?: boolean;
   pendingVersions?: string[];
@@ -100,9 +104,15 @@ export interface LookupUpdate {
   checksumUrl?: string;
   downloadUrl?: string;
   releaseTimestamp?: any;
+  newVersionAgeInDays?: number;
   registryUrl?: string;
+  libYears?: number;
 }
 
+/**
+ * @property {string} depName - Display name of the package. See #16012
+ * @property {string} packageName - The name of the package, used in comparisons. depName is used as fallback if this is not set. See #16012
+ */
 export interface PackageDependency<T = Record<string, any>>
   extends ManagerData<T> {
   currentValue?: string | null;
@@ -135,11 +145,13 @@ export interface PackageDependency<T = Record<string, any>>
   digestOneAndOnly?: boolean;
   fixedVersion?: string;
   currentVersion?: string;
+  currentVersionTimestamp?: string;
   lockedVersion?: string;
   propSource?: string;
   registryUrls?: string[] | null;
   rangeStrategy?: RangeStrategy;
   skipReason?: SkipReason;
+  skipStage?: StageName;
   sourceLine?: number;
   newVersion?: string;
   updates?: LookupUpdate[];
@@ -159,6 +171,7 @@ export interface Upgrade<T = Record<string, any>> extends PackageDependency<T> {
   currentRawValue?: any;
   depGroup?: string;
   lockFiles?: string[];
+  manager?: string;
   name?: string;
   newDigest?: string;
   newFrom?: string;
@@ -179,15 +192,28 @@ export interface Upgrade<T = Record<string, any>> extends PackageDependency<T> {
   replaceString?: string;
 }
 
+export interface ArtifactNotice {
+  file: string;
+  message: string;
+}
+
 export interface ArtifactError {
+  fileName?: string;
   lockFile?: string;
   stderr?: string;
 }
 
-export interface UpdateArtifactsResult {
-  artifactError?: ArtifactError;
-  file?: FileChange;
-}
+export type UpdateArtifactsResult =
+  | {
+      file?: FileChange;
+      notice?: ArtifactNotice;
+      artifactError?: undefined;
+    }
+  | {
+      file?: undefined;
+      notice?: undefined;
+      artifactError?: ArtifactError;
+    };
 
 export interface UpdateArtifact<T = Record<string, unknown>> {
   packageFileName: string;
@@ -232,41 +258,42 @@ export interface ManagerApi extends ModuleApi {
 
   categories?: Category[];
   supportsLockFileMaintenance?: boolean;
-
+  supersedesManagers?: string[];
   supportedDatasources: string[];
 
   bumpPackageVersion?(
     content: string,
     currentValue: string,
-    bumpVersion: ReleaseType
-  ): Result<BumpPackageVersionResult>;
+    bumpVersion: ReleaseType,
+    packageFile: string,
+  ): MaybePromise<BumpPackageVersionResult>;
 
-  detectGlobalConfig?(): Result<GlobalManagerConfig>;
+  detectGlobalConfig?(): MaybePromise<GlobalManagerConfig>;
 
   extractAllPackageFiles?(
     config: ExtractConfig,
-    files: string[]
-  ): Result<PackageFile[] | null>;
+    files: string[],
+  ): MaybePromise<PackageFile[] | null>;
 
   extractPackageFile?(
     content: string,
     packageFile?: string,
-    config?: ExtractConfig
-  ): Result<PackageFileContent | null>;
+    config?: ExtractConfig,
+  ): MaybePromise<PackageFileContent | null>;
 
   getRangeStrategy?(config: RangeConfig): RangeStrategy;
 
   updateArtifacts?(
-    updateArtifact: UpdateArtifact
-  ): Result<UpdateArtifactsResult[] | null>;
+    updateArtifact: UpdateArtifact,
+  ): MaybePromise<UpdateArtifactsResult[] | null>;
 
   updateDependency?(
-    updateDependencyConfig: UpdateDependencyConfig
-  ): Result<string | null>;
+    updateDependencyConfig: UpdateDependencyConfig,
+  ): MaybePromise<string | null>;
 
   updateLockedDependency?(
-    config: UpdateLockedConfig
-  ): Result<UpdateLockedResult>;
+    config: UpdateLockedConfig,
+  ): MaybePromise<UpdateLockedResult>;
 }
 
 // TODO: name and properties used by npm manager

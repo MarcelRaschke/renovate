@@ -14,16 +14,30 @@ export const presets: Record<string, Preset> = {
   },
   apollographql: {
     description: 'All packages published by Apollo GraphQL.',
-    matchSourceUrlPrefixes: ['https://github.com/apollographql/'],
+    matchSourceUrls: ['https://github.com/apollographql/**'],
+  },
+  atlaskit: {
+    description: 'All @atlaskit packages published by Atlassian.',
+    matchPackageNames: ['@atlaskit/**'],
   },
   emberTemplateLint: {
     description: 'All ember-template-lint packages.',
-    matchPackagePrefixes: ['ember-template-lint'],
+    matchPackageNames: ['ember-template-lint**'],
   },
   eslint: {
     description: 'All ESLint packages.',
-    matchPackageNames: ['@types/eslint', 'babel-eslint'],
-    matchPackagePrefixes: ['@typescript-eslint/', 'eslint'],
+    matchPackageNames: [
+      '@types/eslint',
+      'babel-eslint',
+      '@babel/eslint-parser',
+      '@eslint/**',
+      '@eslint-community/**',
+      '@stylistic/eslint-plugin**',
+      '@types/eslint__**',
+      '@typescript-eslint/**',
+      'typescript-eslint',
+      'eslint**',
+    ],
   },
   gatsby: {
     description: 'All packages published by Gatsby.',
@@ -32,8 +46,7 @@ export const presets: Record<string, Preset> = {
   googleapis: {
     description: 'All `googleapis` packages.',
     matchDatasources: ['npm'],
-    matchPackageNames: ['google-auth-library'],
-    matchPackagePrefixes: ['@google-cloud/'],
+    matchPackageNames: ['google-auth-library', '@google-cloud/**'],
   },
   jsTest: {
     description: 'JavaScript test packages.',
@@ -67,16 +80,15 @@ export const presets: Record<string, Preset> = {
       'ts-auto-mock',
       'ts-jest',
       'vitest',
-    ],
-    matchPackagePrefixes: [
-      '@testing-library',
-      '@vitest',
-      'chai',
-      'jest',
-      'mocha',
-      'qunit',
-      'should',
-      'sinon',
+      '@testing-library/**',
+      '@types/testing-library__**',
+      '@vitest/**',
+      'chai**',
+      'jest**',
+      'mocha**',
+      'qunit**',
+      'should**',
+      'sinon**',
     ],
   },
   linters: {
@@ -84,6 +96,7 @@ export const presets: Record<string, Preset> = {
     extends: [
       'packages:emberTemplateLint',
       'packages:eslint',
+      'packages:phpLinters',
       'packages:stylelint',
       'packages:tslint',
     ],
@@ -91,21 +104,43 @@ export const presets: Record<string, Preset> = {
   },
   mapbox: {
     description: 'All Mapbox-related packages.',
-    matchPackagePrefixes: ['leaflet', 'mapbox'],
+    matchPackageNames: ['leaflet**', 'mapbox**'],
+  },
+  phpLinters: {
+    description: 'All PHP lint-related packages.',
+    matchPackageNames: [
+      'friendsofphp/php-cs-fixer',
+      'squizlabs/php_codesniffer',
+      'symplify/easy-coding-standard',
+    ],
+  },
+  phpUnitTest: {
+    description: 'Unit test packages for PHP.',
+    matchPackageNames: [
+      'behat/behat',
+      'brianium/paratest',
+      'facile-it/paraunit',
+      'mockery/mockery',
+      'phpspec/prophecy',
+      'phpspec/prophecy-phpunit',
+      'phpspec/phpspec',
+      'phpunit/phpunit',
+      'pestphp/**',
+      'php-mock/**',
+    ],
   },
   postcss: {
     description: 'All PostCSS packages.',
-    matchPackageNames: ['postcss'],
-    matchPackagePrefixes: ['postcss-'],
+    matchPackageNames: ['postcss', 'postcss-**'],
   },
   react: {
     description: 'All React packages.',
-    matchPackageNames: ['@types/react'],
-    matchPackagePrefixes: ['react'],
+    matchDatasources: ['npm'],
+    matchPackageNames: ['@types/react**', 'react**'],
   },
   stylelint: {
     description: 'All Stylelint packages.',
-    matchPackagePrefixes: ['stylelint'],
+    matchPackageNames: ['stylelint**'],
   },
   test: {
     description: 'Test packages.',
@@ -113,11 +148,15 @@ export const presets: Record<string, Preset> = {
   },
   tslint: {
     description: 'All TSLint packages.',
-    matchPackageNames: ['codelyzer'],
-    matchPackagePatterns: ['\\btslint\\b'],
+    matchPackageNames: ['codelyzer', '/\\btslint\\b/'],
   },
   unitTest: {
     description: 'All unit test packages.',
-    extends: ['packages:jsUnitTest'],
+    extends: ['packages:jsUnitTest', 'packages:phpUnitTest'],
+  },
+  vite: {
+    description: 'All Vite related packages',
+    matchDatasources: ['npm'],
+    matchPackageNames: ['vite', '**vite-plugin**', '@vitejs/**'],
   },
 };

@@ -1,4 +1,3 @@
-import { lt } from '@renovatebot/ruby-semver';
 import is from '@sindresorhus/is';
 import { quote } from 'shlex';
 import {
@@ -17,7 +16,6 @@ import {
 } from '../../../util/fs';
 import { getRepoStatus } from '../../../util/git';
 import { newlineRegex, regEx } from '../../../util/regex';
-import { isValid } from '../../versioning/ruby';
 import type { UpdateArtifact, UpdateArtifactsResult } from '../types';
 import {
   getBundlerConstraint,
@@ -32,14 +30,17 @@ import {
 const hostConfigVariablePrefix = 'BUNDLE_';
 
 function buildBundleHostVariable(hostRule: HostRule): Record<string, string> {
-  if (!hostRule.resolvedHost || hostRule.resolvedHost.includes('-')) {
+  // istanbul ignore if: doesn't happen in practice
+  if (!hostRule.resolvedHost) {
     return {};
   }
   const varName = hostConfigVariablePrefix.concat(
     hostRule.resolvedHost
+      .toUpperCase()
       .split('.')
-      .map((term) => term.toUpperCase())
       .join('__')
+      .split('-')
+      .join('___'),
   );
   return {
     [varName]: `${getAuthenticationHeaderValue(hostRule)}`,
@@ -47,7 +48,7 @@ function buildBundleHostVariable(hostRule: HostRule): Record<string, string> {
 }
 
 const resolvedPkgRegex = regEx(
-  /(?<pkg>\S+)(?:\s*\([^)]+\)\s*)? was resolved to/
+  /(?<pkg>\S+)(?:\s*\([^)]+\)\s*)? was resolved to/,
 );
 
 function getResolvedPackages(input: string): string[] {
@@ -66,7 +67,7 @@ function getResolvedPackages(input: string): string[] {
 
 export async function updateArtifacts(
   updateArtifact: UpdateArtifact,
-  recursionLimit = 10
+  recursionLimit = 10,
 ): Promise<UpdateArtifactsResult[] | null> {
   const { packageFileName, updatedDeps, newPackageFileContent, config } =
     updateArtifact;
@@ -96,6 +97,13 @@ export async function updateArtifacts(
     if (config.isLockFileMaintenance) {
       commands.push('bundler lock --update');
     } else {
+      const bundlerUpgraded = updatedDeps
+        .map((dep) => dep.depName)
+        .includes('bundler');
+      if (bundlerUpgraded) {
+        commands.push('bundler lock --update --bundler');
+      }
+
       const updateTypes = {
         patch: '--patch --strict ',
         minor: '--minor --strict ',
@@ -106,17 +114,27 @@ export async function updateArtifacts(
           .filter((dep) => (dep.updateType ?? 'major') === updateType)
           .map((dep) => dep.depName)
           .filter(is.string)
-          .filter((dep) => dep !== 'ruby');
+          .filter((dep) => dep !== 'ruby' && dep !== 'bundler');
         let additionalArgs = '';
         if (config.postUpdateOptions?.includes('bundlerConservative')) {
           additionalArgs = '--conservative ';
         }
         if (deps.length) {
-          const cmd = `bundler lock ${updateArg}${additionalArgs}--update ${deps
+          let cmd = `bundler lock ${updateArg}${additionalArgs}--update ${deps
             .map(quote)
             .join(' ')}`;
+          if (cmd.includes(' --conservative ')) {
+            cmd = cmd.replace(' --strict', '');
+          }
           commands.push(cmd);
         }
+      }
+
+      const rubyUpgraded = updatedDeps
+        .map((dep) => dep.depName)
+        .includes('ruby');
+      if (rubyUpgraded) {
+        commands.push('bundler lock');
       }
     }
 
@@ -129,52 +147,18 @@ export async function updateArtifacts(
         ...variables,
         ...buildBundleHostVariable(hostRule),
       }),
-      {} as Record<string, string>
-    );
-
-    // Detect hosts with a hyphen '-' in the url.
-    // Those cannot be added with environment variables but need to be added
-    // with the bundler config
-    const bundlerHostRulesAuthCommands: string[] = bundlerHostRules.reduce(
-      (authCommands: string[], hostRule) => {
-        if (hostRule.resolvedHost?.includes('-')) {
-          // TODO: fix me, hostrules can missing all auth
-          const creds = getAuthenticationHeaderValue(hostRule);
-          authCommands.push(`${hostRule.resolvedHost} ${creds}`);
-        }
-        return authCommands;
-      },
-      []
+      {} as Record<string, string>,
     );
 
     const bundler = getBundlerConstraint(
       updateArtifact,
-      existingLockFileContent
+      existingLockFileContent,
     );
     const preCommands = ['ruby --version'];
 
-    // Bundler < 2 has a different config option syntax than >= 2
-    if (
-      bundlerHostRulesAuthCommands &&
-      bundler &&
-      isValid(bundler) &&
-      lt(bundler, '2')
-    ) {
-      preCommands.push(
-        ...bundlerHostRulesAuthCommands.map(
-          (authCommand) => `bundler config --local ${authCommand}`
-        )
-      );
-    } else if (bundlerHostRulesAuthCommands) {
-      preCommands.push(
-        ...bundlerHostRulesAuthCommands.map(
-          (authCommand) => `bundler config set --local ${authCommand}`
-        )
-      );
-    }
-
     const execOptions: ExecOptions = {
-      cwdFile: packageFileName,
+      cwdFile: lockFileName,
+      userConfiguredEnv: config.env,
       extraEnv: {
         ...bundlerHostRulesVariables,
         GEM_HOME: await ensureCacheDir('bundler'),
@@ -231,19 +215,42 @@ export async function updateArtifacts(
       err.stdout?.includes('Please supply credentials for this source') ||
       err.stderr?.includes('Authentication is required') ||
       err.stderr?.includes(
-        'Please make sure you have the correct access rights'
+        'Please make sure you have the correct access rights',
       )
     ) {
       logger.debug(
         { err },
-        'Gemfile.lock update failed due to missing credentials - skipping branch'
+        'Gemfile.lock update failed due to missing credentials - skipping branch',
       );
       // Do not generate these PRs because we don't yet support Bundler authentication
       memCache.set('bundlerArtifactsError', BUNDLER_INVALID_CREDENTIALS);
       throw new Error(BUNDLER_INVALID_CREDENTIALS);
     }
+    if (
+      recursionLimit > 0 &&
+      (output.includes('version solving has failed') ||
+        output.includes('Could not find gem'))
+    ) {
+      logger.debug('Failed to lock strictly, retrying non-strict');
+      const newConfig = {
+        ...config,
+        postUpdateOptions: [
+          ...(config.postUpdateOptions ?? []),
+          'bundlerConservative',
+        ],
+      };
+      return updateArtifacts(
+        {
+          packageFileName,
+          updatedDeps,
+          newPackageFileContent,
+          config: newConfig,
+        },
+        recursionLimit - 1,
+      );
+    }
     const resolveMatches: string[] = getResolvedPackages(output).filter(
-      (depName) => !updatedDepNames.includes(depName)
+      (depName) => !updatedDepNames.includes(depName),
     );
     if (
       recursionLimit > 0 &&
@@ -252,7 +259,7 @@ export async function updateArtifacts(
     ) {
       logger.debug(
         { resolveMatches, updatedDeps },
-        'Found new resolve matches - reattempting recursively'
+        'Found new resolve matches - reattempting recursively',
       );
       const newUpdatedDeps = [
         ...new Set([
@@ -267,7 +274,7 @@ export async function updateArtifacts(
           newPackageFileContent,
           config,
         },
-        recursionLimit - 1
+        recursionLimit - 1,
       );
     }
 

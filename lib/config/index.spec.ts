@@ -1,12 +1,13 @@
 import { getConfig } from './defaults';
-import { filterConfig, getManagerConfig, mergeChildConfig } from './index';
+import {
+  filterConfig,
+  getManagerConfig,
+  mergeChildConfig,
+  removeGlobalConfig,
+} from './index';
 
 jest.mock('../modules/datasource/npm');
-try {
-  jest.mock('../../config.js');
-} catch (err) {
-  // file does not exist
-}
+jest.mock('../../config.js', () => ({}), { virtual: true });
 
 const defaultConfig = getConfig();
 
@@ -31,14 +32,23 @@ describe('config/index', () => {
     it('merges packageRules', () => {
       const parentConfig = { ...defaultConfig };
       Object.assign(parentConfig, {
-        packageRules: [{ a: 1 }, { a: 2 }],
+        packageRules: [
+          { matchPackageNames: ['pkg1'] },
+          { matchPackageNames: ['pkg2'] },
+        ],
       });
       const childConfig = {
-        packageRules: [{ a: 3 }, { a: 4 }],
+        packageRules: [
+          { matchPackageNames: ['pkg3'] },
+          { matchPackageNames: ['pkg4'] },
+        ],
       };
       const config = mergeChildConfig(parentConfig, childConfig);
-      expect(config.packageRules.map((rule) => rule.a)).toMatchObject([
-        1, 2, 3, 4,
+      expect(config.packageRules).toMatchObject([
+        { matchPackageNames: ['pkg1'] },
+        { matchPackageNames: ['pkg2'] },
+        { matchPackageNames: ['pkg3'] },
+        { matchPackageNames: ['pkg4'] },
       ]);
     });
 
@@ -60,6 +70,25 @@ describe('config/index', () => {
       expect(config.constraints.node).toBe('<15');
     });
 
+    it('merges forced options', () => {
+      const parentConfig = { ...defaultConfig };
+      Object.assign(parentConfig, {
+        force: {
+          schedule: 'at any time',
+        },
+      });
+      const childConfig = {
+        force: {
+          constraints: {
+            node: '<15',
+          },
+        },
+      };
+      const config = mergeChildConfig(parentConfig, childConfig);
+      expect(config.force.schedule).toBe('at any time');
+      expect(config.force.constraints.node).toBe('<15');
+    });
+
     it('handles null parent packageRules', async () => {
       const parentConfig = { ...defaultConfig };
       Object.assign(parentConfig, {
@@ -75,9 +104,15 @@ describe('config/index', () => {
 
     it('handles null child packageRules', () => {
       const parentConfig = { ...defaultConfig };
-      parentConfig.packageRules = [{ a: 3 }, { a: 4 }];
+      parentConfig.packageRules = [
+        { matchPackageNames: ['pkg1'] },
+        { matchPackageNames: ['pkg2'] },
+      ];
       const config = mergeChildConfig(parentConfig, {});
-      expect(config.packageRules).toHaveLength(2);
+      expect(config.packageRules).toMatchObject([
+        { matchPackageNames: ['pkg1'] },
+        { matchPackageNames: ['pkg2'] },
+      ]);
     });
 
     it('handles undefined childConfig', () => {
@@ -114,6 +149,22 @@ describe('config/index', () => {
       };
       const config = mergeChildConfig(parentConfig, childConfig);
       expect(config.vulnerabilitySeverity).toBe('CRITICAL');
+    });
+  });
+
+  describe('removeGlobalConfig()', () => {
+    it('removes all global config', () => {
+      const filteredConfig = removeGlobalConfig(defaultConfig, false);
+      expect(filteredConfig).not.toHaveProperty('onboarding');
+      expect(filteredConfig).not.toHaveProperty('binarySource');
+      expect(filteredConfig.prHourlyLimit).toBe(2);
+    });
+
+    it('retains inherited config', () => {
+      const filteredConfig = removeGlobalConfig(defaultConfig, true);
+      expect(filteredConfig).toHaveProperty('onboarding');
+      expect(filteredConfig).not.toHaveProperty('binarySource');
+      expect(filteredConfig.prHourlyLimit).toBe(2);
     });
   });
 });

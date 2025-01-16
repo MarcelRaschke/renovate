@@ -2,6 +2,7 @@ import is from '@sindresorhus/is';
 import { GlobalConfig } from '../../../../config/global';
 import type { RenovateConfig } from '../../../../config/types';
 import { logger } from '../../../../logger';
+import type { Pr } from '../../../../modules/platform';
 import { platform } from '../../../../modules/platform';
 import { hashBody } from '../../../../modules/platform/pr-body';
 import { scm } from '../../../../modules/platform/scm';
@@ -18,17 +19,17 @@ import { getMigrationBranchName } from '../common';
 
 export async function ensureConfigMigrationPr(
   config: RenovateConfig,
-  migratedConfigData: MigratedData
-): Promise<void> {
+  migratedConfigData: MigratedData,
+): Promise<Pr | null> {
   logger.debug('ensureConfigMigrationPr()');
   const docsLink = joinUrlParts(
     coerceString(config.productLinks?.documentation),
-    'configuration-options/#configmigration'
+    'configuration-options/#configmigration',
   );
   const branchName = getMigrationBranchName(config);
   const commitMessageFactory = new ConfigMigrationCommitMessageFactory(
     config,
-    migratedConfigData.filename
+    migratedConfigData.filename,
   );
 
   const prTitle = commitMessageFactory.getPrTitle();
@@ -52,7 +53,7 @@ ${
 
 :question: Got questions? Does something look wrong to you? Please don't hesitate to [request help here](${
       config.productLinks?.help
-    }).\n\n`
+    }).\n\n`,
   );
 
   if (is.string(config.prHeader)) {
@@ -74,7 +75,7 @@ ${
       existingPr.title === prTitle
     ) {
       logger.debug(`Pr does not need updating, PrNo: ${existingPr.number}`);
-      return;
+      return existingPr;
     }
     // PR must need updating
     if (GlobalConfig.get('dryRun')) {
@@ -87,7 +88,7 @@ ${
       });
       logger.info({ pr: existingPr.number }, 'Migration PR updated');
     }
-    return;
+    return existingPr;
   }
   logger.debug('Creating migration PR');
   const labels = prepareLabels(config);
@@ -102,7 +103,7 @@ ${
         prTitle,
         prBody,
         labels,
-        platformOptions: getPlatformPrOptions({
+        platformPrOptions: getPlatformPrOptions({
           ...config,
           automerge: false,
         }),
@@ -111,21 +112,25 @@ ${
       if (pr) {
         await addParticipants(config, pr);
       }
+
+      return pr;
     }
   } catch (err) {
     if (
       err.response?.statusCode === 422 &&
       err.response?.body?.errors?.[0]?.message?.startsWith(
-        'A pull request already exists'
+        'A pull request already exists',
       )
     ) {
       logger.warn(
         { err },
-        'Migration PR already exists but cannot find it. It was probably created by a different user.'
+        'Migration PR already exists but cannot find it. It was probably created by a different user.',
       );
       await scm.deleteBranch(branchName);
-      return;
+      return null;
     }
     throw err;
   }
+
+  return null;
 }

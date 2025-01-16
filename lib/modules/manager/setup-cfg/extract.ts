@@ -3,7 +3,12 @@ import { RANGE_PATTERN } from '@renovatebot/pep440';
 import { logger } from '../../../logger';
 import { newlineRegex, regEx } from '../../../util/regex';
 import { PypiDatasource } from '../../datasource/pypi';
-import type { PackageDependency, PackageFileContent, Result } from '../types';
+import { normalizePythonDepName } from '../../datasource/pypi/common';
+import type {
+  MaybePromise,
+  PackageDependency,
+  PackageFileContent,
+} from '../types';
 
 function getSectionName(str: string): string {
   const [, sectionName] = regEx(/^\[\s*([^\s]+)\s*]\s*$/).exec(str) ?? [];
@@ -17,7 +22,7 @@ function getSectionRecord(str: string): string {
 
 function getDepType(
   section: string | null,
-  record: string | null
+  record: string | null,
 ): null | string {
   if (section === 'options') {
     if (record === 'install_requires') {
@@ -39,7 +44,7 @@ function getDepType(
 function parseDep(
   line: string,
   section: string | null,
-  record: string | null
+  record: string | null,
 ): PackageDependency | null {
   const packagePattern = '[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]';
   const extrasPattern = '(?:\\s*\\[[^\\]]+\\])?';
@@ -47,7 +52,7 @@ function parseDep(
   const rangePattern: string = RANGE_PATTERN;
   const specifierPartPattern = `\\s*${rangePattern.replace(
     regEx(/\?<\w+>/g),
-    '?:'
+    '?:',
   )}`;
   const specifierPattern = `${specifierPartPattern}(?:\\s*,${specifierPartPattern})*`;
   const dependencyPattern = `(${packagePattern})(${extrasPattern})(${specifierPattern})`;
@@ -73,6 +78,7 @@ function parseDep(
 
   const dep: PackageDependency = {
     depName,
+    packageName: normalizePythonDepName(depName),
     currentValue,
     datasource: PypiDatasource.id,
     depType,
@@ -86,8 +92,8 @@ function parseDep(
 }
 
 export function extractPackageFile(
-  content: string
-): Result<PackageFileContent | null> {
+  content: string,
+): MaybePromise<PackageFileContent | null> {
   logger.trace('setup-cfg.extractPackageFile()');
 
   let sectionName: string | null = null;

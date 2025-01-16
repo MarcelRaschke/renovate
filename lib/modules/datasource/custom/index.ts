@@ -1,11 +1,11 @@
 import is from '@sindresorhus/is';
-import jsonata from 'jsonata';
 import { logger } from '../../../logger';
-import { newlineRegex } from '../../../util/regex';
+import { getExpression } from '../../../util/jsonata';
 import { Datasource } from '../datasource';
-import type { GetReleasesConfig, ReleaseResult } from '../types';
+import type { DigestConfig, GetReleasesConfig, ReleaseResult } from '../types';
+import { fetchers } from './formats';
 import { ReleaseResultZodSchema } from './schema';
-import { massageCustomDatasourceConfig } from './utils';
+import { getCustomConfig } from './utils';
 
 export class CustomDatasource extends Datasource {
   static readonly id = 'custom';
@@ -17,47 +17,54 @@ export class CustomDatasource extends Datasource {
   }
 
   async getReleases(
-    getReleasesConfig: GetReleasesConfig
+    getReleasesConfig: GetReleasesConfig,
   ): Promise<ReleaseResult | null> {
-    const customDatasourceName = getReleasesConfig.datasource?.replace(
-      'custom.',
-      ''
-    );
-
-    if (!is.nonEmptyString(customDatasourceName)) {
-      logger.debug(
-        `No datasource has been supplied while looking up ${getReleasesConfig.packageName}`
-      );
-      return null;
-    }
-
-    const config = massageCustomDatasourceConfig(
-      customDatasourceName,
-      getReleasesConfig
-    );
+    const config = getCustomConfig(getReleasesConfig);
     if (is.nullOrUndefined(config)) {
       return null;
     }
 
     const { defaultRegistryUrlTemplate, transformTemplates, format } = config;
-    // TODO add here other format options than JSON and "plain"
-    let response: unknown;
+
+    const fetcher = fetchers[format];
+    const isLocalRegistry = defaultRegistryUrlTemplate.startsWith('file://');
+
+    let data: unknown;
     try {
-      if (format === 'plain') {
-        response = await this.fetchPlainFormat(defaultRegistryUrlTemplate);
+      if (isLocalRegistry) {
+        data = await fetcher.readFile(
+          defaultRegistryUrlTemplate.replace('file://', ''),
+        );
       } else {
-        response = (await this.http.getJson(defaultRegistryUrlTemplate)).body;
+        data = await fetcher.fetch(this.http, defaultRegistryUrlTemplate);
       }
     } catch (e) {
       this.handleHttpErrors(e);
       return null;
     }
 
-    let data = response;
+    logger.trace({ data }, `Custom manager fetcher '${format}' returned data.`);
 
     for (const transformTemplate of transformTemplates) {
-      const expression = jsonata(transformTemplate);
-      data = await expression.evaluate(data);
+      const expression = getExpression(transformTemplate);
+
+      if (expression instanceof Error) {
+        logger.once.warn(
+          { errorMessage: expression.message },
+          `Invalid JSONata expression: ${transformTemplate}`,
+        );
+        return null;
+      }
+
+      try {
+        data = await expression.evaluate(data);
+      } catch (err) {
+        logger.once.warn(
+          { err },
+          `Error while evaluating JSONata expression: ${transformTemplate}`,
+        );
+        return null;
+      }
     }
 
     try {
@@ -70,23 +77,11 @@ export class CustomDatasource extends Datasource {
     }
   }
 
-  private async fetchPlainFormat(url: string): Promise<unknown> {
-    const response = await this.http.get(url, {
-      headers: {
-        Accept: 'text/plain',
-      },
-    });
-    const contentType = response.headers['content-type'];
-    if (!contentType?.startsWith('text/')) {
-      return null;
-    }
-    const versions = response.body.split(newlineRegex).map((version) => {
-      return {
-        version: version.trim(),
-      };
-    });
-    return {
-      releases: versions,
-    };
+  override getDigest(
+    { packageName }: DigestConfig,
+    newValue?: string,
+  ): Promise<string | null> {
+    // Return null here to support setting a digest: value can be provided digest in getReleases
+    return Promise.resolve(null);
   }
 }

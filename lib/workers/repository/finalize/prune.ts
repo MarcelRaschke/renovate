@@ -1,3 +1,4 @@
+import is from '@sindresorhus/is';
 import { GlobalConfig } from '../../../config/global';
 import type { RenovateConfig } from '../../../config/types';
 import { REPOSITORY_CHANGED } from '../../../constants/error-messages';
@@ -6,10 +7,13 @@ import { platform } from '../../../modules/platform';
 import { ensureComment } from '../../../modules/platform/comment';
 import { scm } from '../../../modules/platform/scm';
 import { getBranchList, setUserRepoConfig } from '../../../util/git';
+import { escapeRegExp, regEx } from '../../../util/regex';
+import { uniqueStrings } from '../../../util/string';
+import { getReconfigureBranchName } from '../reconfigure/utils';
 
 async function cleanUpBranches(
   config: RenovateConfig,
-  remainingBranches: string[]
+  remainingBranches: string[],
 ): Promise<void> {
   if (!config.pruneStaleBranches) {
     logger.debug('Branch/PR pruning is disabled - skipping');
@@ -17,19 +21,31 @@ async function cleanUpBranches(
   }
   // set Git author in case the repository is not initialized yet
   setUserRepoConfig(config);
+
+  // calculate regex to extract base branch from branch name
+  const baseBranchRe = calculateBaseBranchRegex(config);
+
   for (const branchName of remainingBranches) {
     try {
+      // get base branch from branch name if base branches are configured
+      // use default branch if no base branches are configured
+      // use defaul branch name if no match (can happen when base branches are configured later)
+      const baseBranch =
+        baseBranchRe?.exec(branchName)?.[1] ?? config.defaultBranch!;
       const pr = await platform.findPr({
         branchName,
         state: 'open',
-        targetBranch: config.baseBranch,
+        targetBranch: baseBranch,
       });
-      const branchIsModified = await scm.isBranchModified(branchName);
+      const branchIsModified = await scm.isBranchModified(
+        branchName,
+        baseBranch,
+      );
       if (pr) {
         if (branchIsModified) {
           logger.debug(
             { prNo: pr.number, prTitle: pr.title },
-            'Branch is modified - skipping PR autoclosing'
+            'Branch is modified - skipping PR autoclosing',
           );
           if (GlobalConfig.get('dryRun')) {
             logger.info(`DRY-RUN: Would update PR title and ensure comment.`);
@@ -53,12 +69,12 @@ async function cleanUpBranches(
         } else if (GlobalConfig.get('dryRun')) {
           logger.info(
             { prNo: pr.number, prTitle: pr.title },
-            `DRY-RUN: Would autoclose PR`
+            `DRY-RUN: Would autoclose PR`,
           );
         } else {
           logger.info(
             { branchName, prNo: pr.number, prTitle: pr.title },
-            'Autoclosing PR'
+            'Autoclosing PR',
           );
           let newPrTitle = pr.title;
           if (!pr.title.endsWith('- autoclosed')) {
@@ -82,12 +98,12 @@ async function cleanUpBranches(
     } catch (err) /* istanbul ignore next */ {
       if (err.message === 'config-validation') {
         logger.debug(
-          'Cannot prune branch due to collision between tags and branch names'
+          'Cannot prune branch due to collision between tags and branch names',
         );
       } else if (err.message?.includes("bad revision 'origin/")) {
         logger.debug(
           { branchName },
-          'Branch not found on origin when attempting to prune'
+          'Branch not found on origin when attempting to prune',
         );
       } else if (err.message !== REPOSITORY_CHANGED) {
         logger.warn({ err, branch: branchName }, 'Error pruning branch');
@@ -96,9 +112,35 @@ async function cleanUpBranches(
   }
 }
 
+/**
+ * Calculates a {RegExp} to extract the base branch from a branch name if base branches are configured.
+ * @param config Renovate configuration
+ */
+function calculateBaseBranchRegex(config: RenovateConfig): RegExp | null {
+  if (!config.baseBranches?.length) {
+    return null;
+  }
+
+  // calculate possible branch prefixes and escape for regex
+  const branchPrefixes = [config.branchPrefix, config.branchPrefixOld]
+    .filter(is.nonEmptyStringAndNotWhitespace)
+    .filter(uniqueStrings)
+    .map(escapeRegExp);
+
+  // calculate possible base branches and escape for regex
+  const baseBranches = config.baseBranches.map(escapeRegExp);
+
+  // create regex to extract base branche from branch name
+  const baseBranchRe = regEx(
+    `^(?:${branchPrefixes.join('|')})(${baseBranches.join('|')})-`,
+  );
+
+  return baseBranchRe;
+}
+
 export async function pruneStaleBranches(
   config: RenovateConfig,
-  branchList: string[] | null | undefined
+  branchList: string[] | null | undefined,
 ): Promise<void> {
   logger.debug('Removing any stale branches');
   logger.trace({ config }, `pruneStaleBranches`);
@@ -109,8 +151,10 @@ export async function pruneStaleBranches(
     return;
   }
   // TODO: types (#22198)
-  let renovateBranches = getBranchList().filter((branchName) =>
-    branchName.startsWith(config.branchPrefix!)
+  let renovateBranches = getBranchList().filter(
+    (branchName) =>
+      branchName.startsWith(config.branchPrefix!) &&
+      branchName !== getReconfigureBranchName(config.branchPrefix!),
   );
   if (!renovateBranches?.length) {
     logger.debug('No renovate branches found');
@@ -121,15 +165,15 @@ export async function pruneStaleBranches(
       branchList: branchList?.sort(),
       renovateBranches: renovateBranches?.sort(),
     },
-    'Branch lists'
+    'Branch lists',
   );
   // TODO: types (#22198)
   const lockFileBranch = `${config.branchPrefix!}lock-file-maintenance`;
   renovateBranches = renovateBranches.filter(
-    (branch) => branch !== lockFileBranch
+    (branch) => branch !== lockFileBranch,
   );
   const remainingBranches = renovateBranches.filter(
-    (branch) => !branchList.includes(branch)
+    (branch) => !branchList.includes(branch),
   );
   logger.debug(`remainingBranches=${String(remainingBranches)}`);
   if (remainingBranches.length === 0) {

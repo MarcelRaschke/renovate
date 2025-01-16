@@ -1,7 +1,8 @@
-import { expect } from '@jest/globals';
 import { ERROR, WARN } from 'bunyan';
 import fs from 'fs-extra';
+import type { RenovateConfig } from '../../../test/util';
 import { logger, mocked } from '../../../test/util';
+import { GlobalConfig } from '../../config/global';
 import * as _presets from '../../config/presets';
 import { CONFIG_PRESETS_INVALID } from '../../constants/error-messages';
 import { DockerDatasource } from '../../modules/datasource/docker';
@@ -41,10 +42,39 @@ const initPlatform = jest.spyOn(platform, 'initPlatform');
 
 describe('workers/global/index', () => {
   beforeEach(() => {
-    logger.getProblems.mockImplementationOnce(() => []);
+    logger.getProblems.mockImplementation(() => []);
+    logger.logLevel.mockImplementation(() => 'info');
     initPlatform.mockImplementation((input) => Promise.resolve(input));
     delete process.env.AWS_SECRET_ACCESS_KEY;
     delete process.env.AWS_SESSION_TOKEN;
+  });
+
+  describe('getRepositoryConfig', () => {
+    const globalConfig: RenovateConfig = { baseDir: '/tmp/base' };
+
+    GlobalConfig.set({ platform: 'gitlab' });
+
+    it('should generate correct topLevelOrg/parentOrg with multiple levels', async () => {
+      const repository = 'a/b/c/d';
+      const repoConfig = await globalWorker.getRepositoryConfig(
+        globalConfig,
+        repository,
+      );
+      expect(repoConfig.topLevelOrg).toBe('a');
+      expect(repoConfig.parentOrg).toBe('a/b/c');
+      expect(repoConfig.repository).toBe('a/b/c/d');
+    });
+
+    it('should generate correct topLevelOrg/parentOrg with two levels', async () => {
+      const repository = 'a/b';
+      const repoConfig = await globalWorker.getRepositoryConfig(
+        globalConfig,
+        repository,
+      );
+      expect(repoConfig.topLevelOrg).toBe('a');
+      expect(repoConfig.parentOrg).toBe('a');
+      expect(repoConfig.repository).toBe('a/b');
+    });
   });
 
   it('handles config warnings and errors', async () => {
@@ -78,7 +108,7 @@ describe('workers/global/index', () => {
       throw new Error('some-error');
     });
     await expect(
-      globalWorker.resolveGlobalExtends(['some-preset'])
+      globalWorker.resolveGlobalExtends(['some-preset']),
     ).rejects.toThrow(CONFIG_PRESETS_INVALID);
     expect(presets.resolveConfigPresets).toHaveBeenCalled();
     expect(parseConfigs).not.toHaveBeenCalled();
@@ -150,7 +180,7 @@ describe('workers/global/index', () => {
       repositories: [],
     });
     logger.getProblems.mockReset();
-    logger.getProblems.mockImplementationOnce(() => [
+    logger.getProblems.mockImplementation(() => [
       {
         level: ERROR,
         msg: 'meh',
@@ -160,13 +190,14 @@ describe('workers/global/index', () => {
   });
 
   it('exits with zero when warnings are logged', async () => {
+    delete process.env.LOG_LEVEL;
     parseConfigs.mockResolvedValueOnce({
       baseDir: '/tmp/base',
       cacheDir: '/tmp/cache',
       repositories: [],
     });
     logger.getProblems.mockReset();
-    logger.getProblems.mockImplementationOnce(() => [
+    logger.getProblems.mockImplementation(() => [
       {
         level: WARN,
         msg: 'meh',
@@ -212,7 +243,7 @@ describe('workers/global/index', () => {
       expect(fs.writeFile).toHaveBeenCalledTimes(1);
       expect(fs.writeFile).toHaveBeenCalledWith(
         '/tmp/renovate-output.json',
-        '["myOrg/myRepo"]'
+        '["myOrg/myRepo"]',
       );
       expect(parseConfigs).toHaveBeenCalledTimes(1);
       expect(repositoryWorker.renovateRepository).toHaveBeenCalledTimes(0);

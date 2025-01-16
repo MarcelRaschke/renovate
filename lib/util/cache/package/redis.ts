@@ -1,13 +1,23 @@
 /* istanbul ignore file */
 import { DateTime } from 'luxon';
-import { createClient } from 'redis';
+import { createClient, createCluster } from 'redis';
 import { logger } from '../../../logger';
-import { compress, decompress } from '../../compress';
+import { compressToBase64, decompressFromBase64 } from '../../compress';
+import { regEx } from '../../regex';
+import type { PackageCacheNamespace } from './types';
 
-let client: ReturnType<typeof createClient> | undefined;
+let client:
+  | ReturnType<typeof createClient>
+  | ReturnType<typeof createCluster>
+  | undefined;
+let rprefix: string | undefined;
 
-function getKey(namespace: string, key: string): string {
-  return `${namespace}-${key}`;
+function getKey(namespace: PackageCacheNamespace, key: string): string {
+  return `${rprefix}${namespace}-${key}`;
+}
+
+export function normalizeRedisUrl(url: string): string {
+  return url.replace(regEx(/^(rediss?)\+cluster:\/\//), '$1://');
 }
 
 export async function end(): Promise<void> {
@@ -19,14 +29,17 @@ export async function end(): Promise<void> {
   }
 }
 
-async function rm(namespace: string, key: string): Promise<void> {
-  logger.trace({ namespace, key }, 'Removing cache entry');
+async function rm(
+  namespace: PackageCacheNamespace,
+  key: string,
+): Promise<void> {
+  logger.trace({ rprefix, namespace, key }, 'Removing cache entry');
   await client?.del(getKey(namespace, key));
 }
 
 export async function get<T = never>(
-  namespace: string,
-  key: string
+  namespace: PackageCacheNamespace,
+  key: string,
 ): Promise<T | undefined> {
   if (!client) {
     return undefined;
@@ -37,30 +50,30 @@ export async function get<T = never>(
     const cachedValue = res && JSON.parse(res);
     if (cachedValue) {
       if (DateTime.local() < DateTime.fromISO(cachedValue.expiry)) {
-        logger.trace({ namespace, key }, 'Returning cached value');
+        logger.trace({ rprefix, namespace, key }, 'Returning cached value');
         // istanbul ignore if
         if (!cachedValue.compress) {
           return cachedValue.value;
         }
-        const res = await decompress(cachedValue.value);
+        const res = await decompressFromBase64(cachedValue.value);
         return JSON.parse(res);
       }
       // istanbul ignore next
       await rm(namespace, key);
     }
-  } catch (err) {
-    logger.trace({ namespace, key }, 'Cache miss');
+  } catch {
+    logger.trace({ rprefix, namespace, key }, 'Cache miss');
   }
   return undefined;
 }
 
 export async function set(
-  namespace: string,
+  namespace: PackageCacheNamespace,
   key: string,
   value: unknown,
-  ttlMinutes = 5
+  ttlMinutes = 5,
 ): Promise<void> {
-  logger.trace({ namespace, key, ttlMinutes }, 'Saving cached value');
+  logger.trace({ rprefix, namespace, key, ttlMinutes }, 'Saving cached value');
 
   // Redis requires TTL to be integer, not float
   const redisTTL = Math.floor(ttlMinutes * 60);
@@ -70,29 +83,47 @@ export async function set(
       getKey(namespace, key),
       JSON.stringify({
         compress: true,
-        value: await compress(JSON.stringify(value)),
+        value: await compressToBase64(JSON.stringify(value)),
         expiry: DateTime.local().plus({ minutes: ttlMinutes }),
       }),
-      { EX: redisTTL }
+      { EX: redisTTL },
     );
   } catch (err) {
-    logger.once.debug({ err }, 'Error while setting cache value');
+    logger.once.warn({ err }, 'Error while setting Redis cache value');
   }
 }
 
-export async function init(url: string): Promise<void> {
+export async function init(
+  url: string,
+  prefix: string | undefined,
+): Promise<void> {
   if (!url) {
     return;
   }
+  rprefix = prefix ?? '';
   logger.debug('Redis cache init');
-  client = createClient({
-    url,
+
+  const rewrittenUrl = normalizeRedisUrl(url);
+  // If any replacement was made, it means the regex matched and we are in clustered mode
+  const clusteredMode = rewrittenUrl.length !== url.length;
+
+  const config = {
+    url: rewrittenUrl,
     socket: {
-      reconnectStrategy: (retries) => {
+      reconnectStrategy: (retries: number) => {
         // Reconnect after this time
         return Math.min(retries * 100, 3000);
       },
     },
-  });
+    pingInterval: 30000, // 30s
+  };
+  if (clusteredMode) {
+    client = createCluster({
+      rootNodes: [config],
+    });
+  } else {
+    client = createClient(config);
+  }
   await client.connect();
+  logger.debug('Redis cache connected');
 }

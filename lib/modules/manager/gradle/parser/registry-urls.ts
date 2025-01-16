@@ -24,7 +24,7 @@ const qUri = q
       maxDepth: 1,
       search: qValueMatcher,
     }),
-    qValueMatcher
+    qValueMatcher,
   )
   .handler((ctx) => storeInTokenMap(ctx, 'registryUrl'));
 
@@ -32,6 +32,7 @@ const qUri = q
 // mavenCentral { ... }
 const qPredefinedRegistries = q
   .sym(regEx(`^(?:${Object.keys(REGISTRY_URLS).join('|')})$`), storeVarToken)
+  .handler((ctx) => storeInTokenMap(ctx, 'registryUrl'))
   .alt(
     q.tree({
       type: 'wrapped-tree',
@@ -43,11 +44,32 @@ const qPredefinedRegistries = q
       type: 'wrapped-tree',
       startsWith: '{',
       endsWith: '}',
-    })
+    }),
   )
-  .handler((ctx) => storeInTokenMap(ctx, 'registryUrl'))
   .handler(handlePredefinedRegistryUrl)
   .handler(cleanupTempVars);
+
+// { url = "https://some.repo" }
+const qMavenArtifactRegistry = q.tree({
+  type: 'wrapped-tree',
+  maxDepth: 1,
+  startsWith: '{',
+  endsWith: '}',
+  search: q.alt(
+    q
+      .sym<Ctx>('name')
+      .opt(q.op('='))
+      .join(qValueMatcher)
+      .handler((ctx) => storeInTokenMap(ctx, 'name')),
+    q.sym<Ctx>('url').opt(q.op('=')).join(qUri),
+    q.sym<Ctx>('setUrl').tree({
+      maxDepth: 1,
+      startsWith: '(',
+      endsWith: ')',
+      search: q.begin<Ctx>().join(qUri).end(),
+    }),
+  ),
+});
 
 // maven(url = uri("https://foo.bar/baz"))
 // maven { name = some; url = "https://foo.bar/${name}" }
@@ -61,26 +83,7 @@ const qCustomRegistryUrl = q
       endsWith: ')',
       search: q.begin<Ctx>().opt(q.sym<Ctx>('url').op('=')).join(qUri).end(),
     }),
-    q.tree({
-      type: 'wrapped-tree',
-      maxDepth: 1,
-      startsWith: '{',
-      endsWith: '}',
-      search: q.alt(
-        q
-          .sym<Ctx>('name')
-          .opt(q.op('='))
-          .join(qValueMatcher)
-          .handler((ctx) => storeInTokenMap(ctx, 'name')),
-        q.sym<Ctx>('url').opt(q.op('=')).join(qUri),
-        q.sym<Ctx>('setUrl').tree({
-          maxDepth: 1,
-          startsWith: '(',
-          endsWith: ')',
-          search: q.begin<Ctx>().join(qUri).end(),
-        })
-      ),
-    })
+    qMavenArtifactRegistry,
   )
   .handler(handleCustomRegistryUrl)
   .handler(cleanupTempVars);
@@ -106,7 +109,7 @@ const qPluginManagement = q.sym<Ctx>('pluginManagement', storeVarToken).tree({
       qApplyFrom,
       qPlugins,
       qPredefinedRegistries,
-      qCustomRegistryUrl
+      qCustomRegistryUrl,
     ),
   postHandler: (ctx) => {
     delete ctx.tmpTokenStore.registryScope;
@@ -118,5 +121,5 @@ export const qRegistryUrls = q.alt<Ctx>(
   q.sym<Ctx>('publishing').tree(),
   qPluginManagement,
   qPredefinedRegistries,
-  qCustomRegistryUrl
+  qCustomRegistryUrl,
 );

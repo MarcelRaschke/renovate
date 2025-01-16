@@ -19,7 +19,7 @@ export function extractRubyVersion(txt: string): string | null {
 }
 
 export async function getRubyConstraint(
-  updateArtifact: UpdateArtifact
+  updateArtifact: UpdateArtifact,
 ): Promise<string | null> {
   const { packageFileName, config, newPackageFileContent } = updateArtifact;
   const { constraints = {} } = config;
@@ -34,17 +34,24 @@ export async function getRubyConstraint(
       logger.debug('Using ruby version from gemfile');
       return rubyMatch;
     }
-    const rubyVersionFile = getSiblingFileName(
-      packageFileName,
-      '.ruby-version'
-    );
-    const rubyVersionFileContent = await readLocalFile(rubyVersionFile, 'utf8');
-    if (rubyVersionFileContent) {
-      logger.debug('Using ruby version specified in .ruby-version');
-      return rubyVersionFileContent
-        .replace(regEx(/^ruby-/), '')
-        .replace(regEx(/\n/g), '')
-        .trim();
+    for (const file of ['.ruby-version', '.tool-versions']) {
+      const rubyVersion = (
+        await readLocalFile(getSiblingFileName(packageFileName, file), 'utf8')
+      )?.match(regEx(/^(?:ruby(?:-|\s+))?(\d[\d.]*)/m))?.[1];
+      if (rubyVersion) {
+        logger.debug(`Using ruby version specified in ${file}`);
+        return rubyVersion;
+      }
+    }
+    const lockFile = await getLockFilePath(packageFileName);
+    if (lockFile) {
+      const rubyVersion = (await readLocalFile(lockFile, 'utf8'))?.match(
+        regEx(/^ {3}ruby (\d[\d.]*)(?:[a-z]|\s|$)/m),
+      )?.[1];
+      if (rubyVersion) {
+        logger.debug(`Using ruby version specified in lock file`);
+        return rubyVersion;
+      }
     }
   }
   return null;
@@ -52,7 +59,7 @@ export async function getRubyConstraint(
 
 export function getBundlerConstraint(
   updateArtifact: Pick<UpdateArtifact, 'config'>,
-  existingLockFileContent: string
+  existingLockFileContent: string,
 ): string | null {
   const { config } = updateArtifact;
   const { constraints = {} } = config;
@@ -63,7 +70,7 @@ export function getBundlerConstraint(
     return bundler;
   } else {
     const bundledWith = regEx(/\nBUNDLED WITH\n\s+(.*?)(\n|$)/).exec(
-      existingLockFileContent
+      existingLockFileContent,
     );
     if (bundledWith) {
       logger.debug('Using bundler version specified in lockfile');
@@ -74,10 +81,11 @@ export function getBundlerConstraint(
 }
 
 export async function getLockFilePath(
-  packageFilePath: string
+  packageFilePath: string,
 ): Promise<string> {
-  logger.debug(`Looking for lockfile for ${packageFilePath}`);
-  return (await localPathExists(`${packageFilePath}.lock`))
+  const lockFilePath = (await localPathExists(`${packageFilePath}.lock`))
     ? `${packageFilePath}.lock`
     : `Gemfile.lock`;
+  logger.debug(`Lockfile for ${packageFilePath} found in ${lockFilePath}`);
+  return lockFilePath;
 }

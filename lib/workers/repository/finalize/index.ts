@@ -3,8 +3,8 @@ import { logger } from '../../../logger';
 import { platform } from '../../../modules/platform';
 import * as repositoryCache from '../../../util/cache/repository';
 import { clearRenovateRefs } from '../../../util/git';
-import { configMigration } from '../config-migration';
 import { PackageFiles } from '../package-files';
+import { checkReconfigureBranch } from '../reconfigure';
 import { pruneStaleBranches } from './prune';
 import {
   runBranchSummary,
@@ -14,9 +14,9 @@ import {
 // istanbul ignore next
 export async function finalizeRepo(
   config: RenovateConfig,
-  branchList: string[]
+  branchList: string[],
 ): Promise<void> {
-  await configMigration(config, branchList);
+  await checkReconfigureBranch(config);
   await repositoryCache.saveCache();
   await pruneStaleBranches(config, branchList);
   await ensureIssuesClosing();
@@ -28,7 +28,8 @@ export async function finalizeRepo(
       (pr) =>
         pr.state === 'merged' &&
         pr.title !== 'Configure Renovate' &&
-        pr.title !== config.onboardingPrTitle
+        pr.title !== config.onboardingPrTitle &&
+        pr.sourceBranch !== config.onboardingBranch,
     )
   ) {
     logger.debug('Repo is activated');

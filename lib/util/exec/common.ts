@@ -1,5 +1,7 @@
-import { ChildProcess, spawn } from 'node:child_process';
-import { ExecError, ExecErrorData } from './exec-error';
+import type { ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import type { ExecErrorData } from './exec-error';
+import { ExecError } from './exec-error';
 import type { ExecResult, RawExecOptions } from './types';
 
 // https://man7.org/linux/man-pages/man7/signal.7.html#NAME
@@ -25,7 +27,7 @@ function stringify(list: Buffer[]): string {
 
 function initStreamListeners(
   cp: ChildProcess,
-  opts: RawExecOptions & { maxBuffer: number }
+  opts: RawExecOptions & { maxBuffer: number },
 ): [Buffer[], Buffer[]] {
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
@@ -90,7 +92,7 @@ export function exec(cmd: string, opts: RawExecOptions): Promise<ExecResult> {
           new ExecError(`Command failed: ${cmd}\nInterrupted by ${signal}`, {
             ...rejectInfo(),
             signal,
-          })
+          }),
         );
         return;
       }
@@ -99,7 +101,7 @@ export function exec(cmd: string, opts: RawExecOptions): Promise<ExecResult> {
           new ExecError(`Command failed: ${cmd}\n${stringify(stderr)}`, {
             ...rejectInfo(),
             exitCode: code,
-          })
+          }),
         );
         return;
       }
@@ -139,7 +141,7 @@ function kill(cp: ChildProcess, signal: NodeJS.Signals): boolean {
       cp.unref();
       return cp.kill(signal);
     }
-  } catch (err) {
+  } catch {
     // cp is a single node tree, therefore -pid is invalid as there is no such pgid,
     return false;
   }
@@ -147,5 +149,5 @@ function kill(cp: ChildProcess, signal: NodeJS.Signals): boolean {
 
 export const rawExec: (
   cmd: string,
-  opts: RawExecOptions
+  opts: RawExecOptions,
 ) => Promise<ExecResult> = exec;

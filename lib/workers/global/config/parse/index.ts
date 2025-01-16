@@ -1,10 +1,10 @@
 import * as defaultsParser from '../../../../config/defaults';
 import type { AllConfig } from '../../../../config/types';
 import { mergeChildConfig } from '../../../../config/utils';
-import { addStream, logger, setContext } from '../../../../logger';
+import { logger, setContext } from '../../../../logger';
 import { detectAllGlobalConfig } from '../../../../modules/manager';
 import { coerceArray } from '../../../../util/array';
-import { ensureDir, getParentDir, readSystemFile } from '../../../../util/fs';
+import { readSystemFile } from '../../../../util/fs';
 import { addSecretForSanitizing } from '../../../../util/sanitize';
 import { ensureTrailingSlash } from '../../../../util/url';
 import * as cliParser from './cli';
@@ -15,7 +15,7 @@ import { hostRulesFromEnv } from './host-rules-from-env';
 
 export async function parseConfigs(
   env: NodeJS.ProcessEnv,
-  argv: string[]
+  argv: string[],
 ): Promise<AllConfig> {
   logger.debug('Parsing configs');
 
@@ -23,7 +23,7 @@ export async function parseConfigs(
   const defaultConfig = defaultsParser.getConfig();
   const fileConfig = await fileParser.getConfig(env);
   const cliConfig = cliParser.getConfig(argv);
-  const envConfig = envParser.getConfig(env);
+  const envConfig = await envParser.getConfig(env);
 
   let config: AllConfig = mergeChildConfig(fileConfig, envConfig);
   config = mergeChildConfig(config, cliConfig);
@@ -53,7 +53,7 @@ export async function parseConfigs(
   if (!config.privateKeyOld && config.privateKeyPathOld) {
     config.privateKeyOld = await readSystemFile(
       config.privateKeyPathOld,
-      'utf8'
+      'utf8',
     );
     delete config.privateKeyPathOld;
   }
@@ -64,21 +64,6 @@ export async function parseConfigs(
   if (config.logContext) {
     // This only has an effect if logContext was defined via file or CLI, otherwise it would already have been detected in env
     setContext(config.logContext);
-  }
-
-  // Add file logger
-  // istanbul ignore if
-  if (config.logFile) {
-    logger.debug(
-      // TODO: types (#22198)
-      `Enabling ${config.logFileLevel!} logging to ${config.logFile}`
-    );
-    await ensureDir(getParentDir(config.logFile));
-    addStream({
-      name: 'logfile',
-      path: config.logFile,
-      level: config.logFileLevel,
-    });
   }
 
   logger.trace({ config: defaultConfig }, 'Default config');
@@ -113,9 +98,14 @@ export async function parseConfigs(
     config.forkProcessing = 'enabled';
   }
 
-  // Remove log file entries
-  delete config.logFile;
-  delete config.logFileLevel;
+  // Only try deletion if RENOVATE_CONFIG_FILE is set
+  await fileParser.deleteNonDefaultConfig(env, !!config.deleteConfigFile);
+
+  // Massage onboardingNoDeps
+  if (!config.autodiscover && config.onboardingNoDeps !== 'disabled') {
+    logger.debug('Enabling onboardingNoDeps while in non-autodiscover mode');
+    config.onboardingNoDeps = 'enabled';
+  }
 
   return config;
 }

@@ -9,7 +9,7 @@ import { BitbucketChangeLogSource } from './source';
 const baseUrl = 'https://bitbucket.org/';
 const apiBaseUrl = 'https://api.bitbucket.org/';
 
-const changelogMd = Fixtures.get('jest.md', '../..');
+const changelogMd = Fixtures.get('jest.md', '..');
 
 const upgrade = partial<BranchUpgradeConfig>({
   manager: 'some-manager',
@@ -23,6 +23,20 @@ const bitbucketTreeResponse = {
       path: 'lib',
       commit: {
         hash: '1234',
+      },
+    },
+    {
+      type: 'commit_file',
+      path: 'CHANGELOG',
+      commit: {
+        hash: 'cdef',
+      },
+    },
+    {
+      type: 'commit_file',
+      path: 'CHANGELOG.json',
+      commit: {
+        hash: 'defg',
       },
     },
     {
@@ -65,7 +79,7 @@ describe('workers/repository/update/pr/changelog/bitbucket/index', () => {
   it('handles release notes', async () => {
     httpMock
       .scope(apiBaseUrl)
-      .get('/2.0/repositories/some-org/some-repo/src?pagelen=100')
+      .get('/2.0/repositories/some-org/some-repo/src/HEAD?pagelen=100')
       .reply(200, bitbucketTreeResponse)
       .get('/2.0/repositories/some-org/some-repo/src/abcd/CHANGELOG.md')
       .reply(200, changelogMd);
@@ -80,7 +94,7 @@ describe('workers/repository/update/pr/changelog/bitbucket/index', () => {
   it('handles missing release notes', async () => {
     httpMock
       .scope(apiBaseUrl)
-      .get('/2.0/repositories/some-org/some-repo/src?pagelen=100')
+      .get('/2.0/repositories/some-org/some-repo/src/HEAD?pagelen=100')
       .reply(200, bitbucketTreeResponseNoChangelogFiles);
     const res = await getReleaseNotesMdFile(bitbucketProject);
     expect(res).toBeNull();
@@ -89,7 +103,7 @@ describe('workers/repository/update/pr/changelog/bitbucket/index', () => {
   it('handles release list', async () => {
     const res = await getReleaseList(
       bitbucketProject,
-      partial<ChangeLogRelease>({})
+      partial<ChangeLogRelease>({}),
     );
     expect(res).toBeEmptyArray();
   });
@@ -103,9 +117,9 @@ describe('workers/repository/update/pr/changelog/bitbucket/index', () => {
     it('returns get ref comparison url', () => {
       const source = new BitbucketChangeLogSource();
       expect(
-        source.getCompareURL(baseUrl, 'some-org/some-repo', 'abc', 'xzy')
+        source.getCompareURL(baseUrl, 'some-org/some-repo', 'abc', 'xzy'),
       ).toBe(
-        'https://bitbucket.org/some-org/some-repo/branches/compare/xzy%0Dabc'
+        'https://bitbucket.org/some-org/some-repo/branches/compare/xzy%0Dabc',
       );
     });
   });

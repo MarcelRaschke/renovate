@@ -25,7 +25,7 @@ Renovate:
 1. Checks if any newer versions exist
 1. Raises Pull Requests for available updates
 
-The Pull Requests patch the package files directly, and include Release Notes for the newer versions (if they are available).
+The Pull Requests patch the package files directly, and include changelogs for the newer versions (if they are available).
 
 By default:
 
@@ -51,15 +51,15 @@ A simplified example:
 
 ### Custom dependency extraction
 
-Renovate supports 60+ types of package files.
+Renovate supports 90+ types of package files.
 By default, Renovate finds most dependencies, but there are exceptions.
 This can be because:
 
 - The package manager/file format is not supported, or
 - The file format is not a standard or is proprietary
 
-If your dependencies are not found by default, you can use our "regex" manager to set your own custom patterns to extract dependencies.
-You configure the regex manager by telling it:
+If your dependencies are not found by default, you can use our `custom` manager to set your own custom patterns to extract dependencies.
+You configure the custom manager by telling it:
 
 - Which file pattern(s) to match
 - How to find the dependency name and version from within the file
@@ -127,7 +127,7 @@ To learn more about "automerge" read the [key concepts, automerge](../key-concep
 
 We use these Renovate features to automerge an internal dependency:
 
-- [Git submodule support](https://docs.renovatebot.com/modules/manager/git-submodules/)
+- [Git submodule support](../modules/manager/git-submodules/index.md)
 - [`automerge`](../configuration-options.md#automerge) set to `true`
 - [`automergeType`](../configuration-options.md#automergetype) set to `branch`
 
@@ -198,8 +198,6 @@ Here's how it works:
 - Renovate only raises updates for packages that need "Dashboard Approval" after you select the corresponding checkbox on the dashboard
 
 #### Benefits of using Dependency Dashboard Approval
-
-Benefits of using Dependency Dashboard Approval:
 
 - By not raising PRs automatically, it allows you to request updates on-demand when you're ready, and
 - It offers you an alternative to permanently ignoring/disabling certain types of updates, like major updates

@@ -1,4 +1,5 @@
-import { parser, query as q } from 'good-enough-parser';
+import type { parser } from 'good-enough-parser';
+import { query as q } from 'good-enough-parser';
 import { regEx } from '../../../../util/regex';
 import type { Ctx } from '../types';
 import {
@@ -13,7 +14,10 @@ import {
   storeInTokenMap,
   storeVarToken,
 } from './common';
-import { qGroovyMapNotationDependencies } from './dependencies';
+import {
+  qDependencyStrings,
+  qGroovyMapNotationDependencies,
+} from './dependencies';
 import { handleAssignment } from './handlers';
 
 // foo = "1.2.3"
@@ -78,11 +82,13 @@ const qGroovySingleMapOfVarAssignment = q.alt(
     .op(':')
     .join(qValueMatcher)
     .handler((ctx) => storeInTokenMap(ctx, 'valToken'))
-    .handler(handleAssignment)
+    .handler(handleAssignment),
+  // ["foo:bar:1.2.3", "foo:baz:$qux"]
+  qDependencyStrings,
 );
 
 const qGroovyMapOfExpr = (
-  search: q.QueryBuilder<Ctx, parser.Node>
+  search: q.QueryBuilder<Ctx, parser.Node>,
 ): q.QueryBuilder<Ctx, parser.Node> =>
   q.alt(
     q.sym(storeVarToken).op(':').tree({
@@ -94,7 +100,7 @@ const qGroovyMapOfExpr = (
       search,
       postHandler: reduceNestingDepth,
     }),
-    qGroovySingleMapOfVarAssignment
+    qGroovySingleMapOfVarAssignment,
   );
 
 // versions = [ android: [ buildTools: '30.0.3' ], kotlin: '1.4.30' ]
@@ -122,7 +128,7 @@ const qKotlinSingleMapOfVarAssignment = qStringValue
   .handler(handleAssignment);
 
 const qKotlinMapOfExpr = (
-  search: q.QueryBuilder<Ctx, parser.Node>
+  search: q.QueryBuilder<Ctx, parser.Node>,
 ): q.QueryBuilder<Ctx, parser.Node> =>
   q.alt(
     qStringValue.sym('to').sym('mapOf').tree({
@@ -134,7 +140,7 @@ const qKotlinMapOfExpr = (
       search,
       postHandler: reduceNestingDepth,
     }),
-    qKotlinSingleMapOfVarAssignment
+    qKotlinSingleMapOfVarAssignment,
   );
 
 // val versions = mapOf("foo1" to "bar1", "foo2" to "bar2", "foo3" to "bar3")
@@ -157,5 +163,5 @@ export const qAssignments = q.alt(
   qGroovyMultiVarAssignment,
   qKotlinSingleVarAssignment,
   qKotlinSingleExtraVarAssignment,
-  qKotlinMultiMapOfVarAssignment
+  qKotlinMultiMapOfVarAssignment,
 );

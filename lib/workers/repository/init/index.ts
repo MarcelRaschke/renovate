@@ -2,13 +2,16 @@ import { GlobalConfig } from '../../../config/global';
 import { applySecretsToConfig } from '../../../config/secrets';
 import type { RenovateConfig } from '../../../config/types';
 import { logger } from '../../../logger';
+import { setRepositoryLogLevelRemaps } from '../../../logger/remap';
 import { platform } from '../../../modules/platform';
+import * as memCache from '../../../util/cache/memory';
 import { clone } from '../../../util/clone';
 import { cloneSubmodules, setUserRepoConfig } from '../../../util/git';
 import { getAll } from '../../../util/host-rules';
 import { checkIfConfigured } from '../configured';
 import { PackageFiles } from '../package-files';
-import { WorkerPlatformConfig, initApis } from './apis';
+import type { WorkerPlatformConfig } from './apis';
+import { initApis } from './apis';
 import { initializeCaches, resetCaches } from './cache';
 import { getRepoConfig } from './config';
 import { detectVulnerabilityAlerts } from './vulnerability';
@@ -27,21 +30,38 @@ function warnOnUnsupportedOptions(config: RenovateConfig): void {
     // TODO: types (#22198)
     const platform = GlobalConfig.get('platform')!;
     logger.warn(
-      `Configuration option 'filterUnavailableUsers' is not supported on the current platform '${platform}'.`
+      { platform },
+      `Configuration option 'filterUnavailableUsers' is not supported on the current platform.`,
+    );
+  }
+
+  if (config.expandCodeOwnersGroups && !platform.expandGroupMembers) {
+    // TODO: types (#22198)
+    const platform = GlobalConfig.get('platform')!;
+    logger.warn(
+      { platform },
+      `Configuration option 'expandCodeOwnersGroups' is not supported on the current platform.`,
     );
   }
 }
 
 export async function initRepo(
-  config_: RenovateConfig
+  config_: RenovateConfig,
 ): Promise<RenovateConfig> {
   PackageFiles.clear();
   let config: RenovateConfig = initializeConfig(config_);
   await resetCaches();
   logger.once.reset();
+  memCache.init();
   config = await initApis(config);
   await initializeCaches(config as WorkerPlatformConfig);
   config = await getRepoConfig(config);
+  setRepositoryLogLevelRemaps(config.logLevelRemap);
+  if (config.mode === 'silent') {
+    logger.info(
+      'Repository is running with mode=silent and will not make Issues or PRs by default',
+    );
+  }
   checkIfConfigured(config);
   warnOnUnsupportedOptions(config);
   config = applySecretsToConfig(config);
@@ -51,9 +71,9 @@ export async function initRepo(
   if (config.printConfig) {
     logger.info(
       { config, hostRules: getAll() },
-      'Full resolved config and hostRules including presets'
+      'Full resolved config and hostRules including presets',
     );
   }
-  await cloneSubmodules(!!config.cloneSubmodules);
+  await cloneSubmodules(!!config.cloneSubmodules, config.cloneSubmodulesFilter);
   return config;
 }

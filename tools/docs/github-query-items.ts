@@ -8,7 +8,7 @@ const gitHubApiUrl = 'https://api.github.com/search/issues?';
 const githubApi = new GithubHttp();
 
 if (process.env.GITHUB_TOKEN) {
-  logger.debug('Using GITHUB_TOKEN from env');
+  logger.info('Using GITHUB_TOKEN from env');
   hostRules.add({
     matchHost: 'api.github.com',
     token: process.env.GITHUB_TOKEN,
@@ -36,6 +36,7 @@ export interface RenovateOpenItems {
   managers: OpenItems;
   platforms: OpenItems;
   datasources: OpenItems;
+  versionings: OpenItems;
 }
 
 export type OpenItems = Record<string, Items | undefined>;
@@ -46,7 +47,19 @@ export interface Items {
 }
 
 export async function getOpenGitHubItems(): Promise<RenovateOpenItems> {
-  const q = `repo:renovatebot/renovate type:issue is:open -label:priority-5-triage`;
+  const result: RenovateOpenItems = {
+    managers: {},
+    platforms: {},
+    datasources: {},
+    versionings: {},
+  };
+
+  if (process.env.SKIP_GITHUB_ISSUES) {
+    logger.warn('Skipping GitHub issues');
+    return result;
+  }
+
+  const q = `repo:renovatebot/renovate type:issue is:open`;
   const per_page = 100;
   try {
     const query = getQueryString({ q, per_page });
@@ -55,20 +68,22 @@ export async function getOpenGitHubItems(): Promise<RenovateOpenItems> {
       {
         paginationField: 'items',
         paginate: true,
-      }
+      },
     );
     const rawItems = res.body?.items ?? [];
 
-    const renovateOpenItems: RenovateOpenItems = {
-      managers: extractIssues(rawItems, 'manager:'),
-      platforms: extractIssues(rawItems, 'platform:'),
-      datasources: extractIssues(rawItems, 'datasource:'),
-    };
+    result.managers = extractIssues(rawItems, 'manager:');
+    result.platforms = extractIssues(rawItems, 'platform:');
+    result.datasources = extractIssues(rawItems, 'datasource:');
+    result.versionings = extractIssues(rawItems, 'versioning:');
 
-    return renovateOpenItems;
+    return result;
   } catch (err) {
     logger.error({ err }, 'Error getting query results');
-    throw err;
+    if (process.env.CI) {
+      throw err;
+    }
+    return result;
   }
 }
 
@@ -119,7 +134,7 @@ function stringifyIssues(items: ItemsEntity[] | undefined): string {
 
 export function generateFeatureAndBugMarkdown(
   issuesMap: OpenItems,
-  key: string
+  key: string,
 ): string {
   let md = '\n\n';
 

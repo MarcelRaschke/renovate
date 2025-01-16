@@ -1,3 +1,4 @@
+import is from '@sindresorhus/is';
 import { z } from 'zod';
 import { logger } from '../../../logger';
 import { ExternalHostError } from '../../../types/errors/external-host-error';
@@ -9,10 +10,10 @@ import { replaceUrlPath, resolveBaseUrl } from '../../../util/url';
 import * as composerVersioning from '../../versioning/composer';
 import { Datasource } from '../datasource';
 import type { GetReleasesConfig, ReleaseResult } from '../types';
+import type { RegistryFile } from './schema';
 import {
   PackagesResponse,
   PackagistFile,
-  RegistryFile,
   RegistryMeta,
   extractDepReleases,
   parsePackagesResponses,
@@ -31,6 +32,14 @@ export class PackagistDatasource extends Datasource {
 
   override readonly registryStrategy = 'hunt';
 
+  override readonly releaseTimestampSupport = true;
+  override readonly releaseTimestampNote =
+    'The release timestamp is determined from the `time` field in the results.';
+  // Note: this can be changed to 'release', as the source is present in each release but we remove it while processing
+  override readonly sourceUrlSupport = 'package';
+  override readonly sourceUrlNote =
+    'The source URL is determined from `source` field in the results.';
+
   // We calculate auth at this datasource layer so that we can know whether it's safe to cache or not
   private static getHostOpts(url: string): HttpOptions {
     const { username, password } = hostRules.find({
@@ -42,7 +51,7 @@ export class PackagistDatasource extends Datasource {
 
   private async getJson<T, U extends z.ZodSchema<T>>(
     url: string,
-    schema: U
+    schema: U,
   ): Promise<z.infer<typeof schema>> {
     const opts = PackagistDatasource.getHostOpts(url);
     const { body } = await this.http.getJson(url, opts);
@@ -66,7 +75,7 @@ export class PackagistDatasource extends Datasource {
 
   private static getPackagistFileUrl(
     regUrl: string,
-    regFile: RegistryFile
+    regFile: RegistryFile,
   ): string {
     const { key, hash } = regFile;
     const fileName = hash
@@ -77,16 +86,16 @@ export class PackagistDatasource extends Datasource {
   }
 
   @cache({
-    namespace: `datasource-${PackagistDatasource.id}-public-files`,
+    namespace: `datasource-${PackagistDatasource.id}`,
     key: (regUrl: string, regFile: RegistryFile) =>
-      PackagistDatasource.getPackagistFileUrl(regUrl, regFile),
+      `getPackagistFile:${PackagistDatasource.getPackagistFileUrl(regUrl, regFile)}`,
     cacheable: (regUrl: string) =>
       !PackagistDatasource.isPrivatePackage(regUrl),
     ttlMinutes: 1440,
   })
   async getPackagistFile(
     regUrl: string,
-    regFile: RegistryFile
+    regFile: RegistryFile,
   ): Promise<PackagistFile> {
     const url = PackagistDatasource.getPackagistFileUrl(regUrl, regFile);
     const packagistFile = await this.getJson(url, PackagistFile);
@@ -95,7 +104,7 @@ export class PackagistDatasource extends Datasource {
 
   async fetchProviderPackages(
     regUrl: string,
-    meta: RegistryMeta
+    meta: RegistryMeta,
   ): Promise<void> {
     await p.map(meta.files, async (file) => {
       const res = await this.getPackagistFile(regUrl, file);
@@ -105,7 +114,7 @@ export class PackagistDatasource extends Datasource {
 
   async fetchIncludesPackages(
     regUrl: string,
-    meta: RegistryMeta
+    meta: RegistryMeta,
   ): Promise<void> {
     await p.map(meta.includesFiles, async (file) => {
       const res = await this.getPackagistFile(regUrl, file);
@@ -116,39 +125,42 @@ export class PackagistDatasource extends Datasource {
   }
 
   @cache({
-    namespace: `datasource-${PackagistDatasource.id}-org`,
+    namespace: `datasource-${PackagistDatasource.id}`,
     key: (registryUrl: string, metadataUrl: string, packageName: string) =>
-      `${registryUrl}:${metadataUrl}:${packageName}`,
+      `packagistV2Lookup:${registryUrl}:${metadataUrl}:${packageName}`,
     ttlMinutes: 10,
   })
   async packagistV2Lookup(
     registryUrl: string,
     metadataUrl: string,
-    packageName: string
+    packageName: string,
   ): Promise<ReleaseResult | null> {
     const pkgUrl = replaceUrlPath(
       registryUrl,
-      metadataUrl.replace('%package%', packageName)
+      metadataUrl.replace('%package%', packageName),
     );
     const pkgPromise = this.getJson(pkgUrl, z.unknown());
 
     const devUrl = replaceUrlPath(
       registryUrl,
-      metadataUrl.replace('%package%', `${packageName}~dev`)
+      metadataUrl.replace('%package%', `${packageName}~dev`),
     );
     const devPromise = this.getJson(devUrl, z.unknown()).then(
       (x) => x,
-      () => null
+      () => null,
     );
 
-    const results = await Promise.all([pkgPromise, devPromise]);
-    return parsePackagesResponses(packageName, results);
+    const responses: NonNullable<unknown>[] = await Promise.all([
+      pkgPromise,
+      devPromise,
+    ]).then((responses) => responses.filter(is.object));
+    return parsePackagesResponses(packageName, responses);
   }
 
   public getPkgUrl(
     packageName: string,
     registryUrl: string,
-    registryMeta: RegistryMeta
+    registryMeta: RegistryMeta,
   ): string | null {
     if (
       registryMeta.providersUrl &&
@@ -165,7 +177,7 @@ export class PackagistDatasource extends Datasource {
     if (registryMeta.providersLazyUrl) {
       return replaceUrlPath(
         registryUrl,
-        registryMeta.providersLazyUrl.replace('%package%', packageName)
+        registryMeta.providersLazyUrl.replace('%package%', packageName),
       );
     }
 
@@ -197,7 +209,7 @@ export class PackagistDatasource extends Datasource {
         const packagistResult = await this.packagistV2Lookup(
           registryUrl,
           meta.metadataUrl,
-          packageName
+          packageName,
         );
         return packagistResult;
       }

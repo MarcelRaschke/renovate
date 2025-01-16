@@ -1,3 +1,4 @@
+import type { PlatformCommitOptions } from '../../config/types';
 import type { GitOptions } from '../../types/git';
 
 export type { DiffResult, StatusResult } from 'simple-git';
@@ -9,21 +10,26 @@ export interface GitAuthor {
 
 export type GitNoVerifyOption = 'commit' | 'push';
 
-export type CommitSha = string;
+/**
+ * We want to make sure this is a long sha of 40 characters and not just any string
+ */
+export type LongCommitSha = string & { __longCommitSha: never };
 
 export interface StorageConfig {
   currentBranch?: string;
+  defaultBranch?: string;
   url: string;
   extraCloneOpts?: GitOptions;
   cloneSubmodules?: boolean;
+  cloneSubmodulesFilter?: string[];
   fullClone?: boolean;
 }
 
 export interface LocalConfig extends StorageConfig {
   additionalBranches: string[];
   currentBranch: string;
-  currentBranchSha: string;
-  branchCommits: Record<string, CommitSha>;
+  currentBranchSha: LongCommitSha;
+  branchCommits: Record<string, LongCommitSha>;
   branchIsModified: Record<string, boolean>;
   commitBranches: Record<string, string[]>;
   ignoredAuthors: string[];
@@ -77,7 +83,9 @@ export interface CommitFilesConfig {
   files: FileChange[];
   message: string | string[];
   force?: boolean;
-  platformCommit?: boolean;
+  platformCommit?: PlatformCommitOptions;
+  /** Only needed by Gerrit platform */
+  prTitle?: string;
 }
 
 export interface PushFilesConfig {
@@ -89,8 +97,8 @@ export interface PushFilesConfig {
 export type BranchName = string;
 
 export interface CommitResult {
-  parentCommitSha: string;
-  commitSha: string;
+  parentCommitSha: LongCommitSha;
+  commitSha: LongCommitSha;
   files: FileChange[];
 }
 
@@ -98,7 +106,7 @@ export interface TreeItem {
   path: string;
   mode: string;
   type: string;
-  sha: string;
+  sha: LongCommitSha;
 }
 
 /**

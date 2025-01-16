@@ -35,7 +35,7 @@ describe('modules/datasource/orb/index', () => {
         await getPkgReleases({
           datasource,
           packageName: 'hyper-expanse/library-release-workflows',
-        })
+        }),
       ).toBeNull();
     });
 
@@ -48,7 +48,7 @@ describe('modules/datasource/orb/index', () => {
         await getPkgReleases({
           datasource,
           packageName: 'hyper-expanse/library-release-wonkflows',
-        })
+        }),
       ).toBeNull();
     });
 
@@ -58,7 +58,7 @@ describe('modules/datasource/orb/index', () => {
         await getPkgReleases({
           datasource,
           packageName: 'hyper-expanse/library-release-workflows',
-        })
+        }),
       ).toBeNull();
     });
 
@@ -68,7 +68,7 @@ describe('modules/datasource/orb/index', () => {
         await getPkgReleases({
           datasource,
           packageName: 'hyper-expanse/library-release-workflows',
-        })
+        }),
       ).toBeNull();
     });
 
@@ -91,6 +91,19 @@ describe('modules/datasource/orb/index', () => {
       });
       expect(res).toMatchSnapshot();
       expect(res?.homepage).toBe('https://google.com');
+    });
+
+    it('supports other registries', async () => {
+      httpMock
+        .scope('https://cci.internal.dev')
+        .post('/graphql-unstable')
+        .reply(200, orbData);
+      const res = await getPkgReleases({
+        datasource,
+        packageName: 'hyper-expanse/library-release-workflows',
+        registryUrls: ['https://cci.internal.dev'],
+      });
+      expect(res?.registryUrl).toBe('https://cci.internal.dev');
     });
   });
 });

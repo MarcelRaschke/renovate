@@ -1,6 +1,7 @@
 import { regEx } from '../../../util/regex';
 import { DartVersionDatasource } from '../../datasource/dart-version';
 import { DockerDatasource } from '../../datasource/docker';
+import { DotnetVersionDatasource } from '../../datasource/dotnet-version';
 import { FlutterVersionDatasource } from '../../datasource/flutter-version';
 import { GithubReleasesDatasource } from '../../datasource/github-releases';
 import { GithubTagsDatasource } from '../../datasource/github-tags';
@@ -39,6 +40,22 @@ const hugoDefinition: ToolingDefinition = {
 };
 
 export const upgradeableTooling: Record<string, ToolingDefinition> = {
+  act: {
+    asdfPluginUrl: 'https://github.com/grimoh/asdf-act.git',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'nektos/act',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  actionlint: {
+    asdfPluginUrl: 'https://github.com/crazy-matt/asdf-actionlint',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'rhysd/actionlint',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
   'adr-tools': {
     asdfPluginUrl: 'https://gitlab.com/td7x/asdf/adr-tools.git',
     config: {
@@ -51,6 +68,22 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
     config: {
       datasource: GithubReleasesDatasource.id,
       packageName: 'argoproj/argo-cd',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  'asdf-plugin-manager': {
+    asdfPluginUrl: 'https://github.com/asdf-community/asdf-plugin-manager',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'asdf-community/asdf-plugin-manager',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  atmos: {
+    asdfPluginUrl: 'https://github.com/cloudposse/asdf-atmos',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'cloudposse/atmos',
       extractVersion: '^v(?<version>\\S+)',
     },
   },
@@ -70,7 +103,7 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
     },
   },
   'cargo-make': {
-    asdfPluginUrl: 'https://github.com/kachick/asdf-cargo-make',
+    asdfPluginUrl: 'https://github.com/mise-plugins/asdf-cargo-make',
     config: {
       datasource: GithubReleasesDatasource.id,
       packageName: 'sagiegurari/cargo-make',
@@ -89,6 +122,22 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
       datasource: GithubTagsDatasource.id,
       packageName: 'clojure/brew-install',
       versioning: `${regexVersioning.id}:^(?<major>\\d+?)\\.(?<minor>\\d+?)\\.(?<patch>\\d+)\\.(?<build>\\d+)$`,
+    },
+  },
+  cookiecutter: {
+    asdfPluginUrl: 'https://github.com/shawon-crosen/asdf-cookiecutter',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'cookiecutter/cookiecutter',
+      versioning: semverVersioning.id,
+    },
+  },
+  cosign: {
+    asdfPluginUrl: 'https://gitlab.com/wt0f/asdf-cosign',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'sigstore/cosign',
+      extractVersion: '^v(?<version>\\S+)',
     },
   },
   crystal: {
@@ -120,6 +169,13 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
       extractVersion: '^v(?<version>\\S+)',
     },
   },
+  'dotnet-core': {
+    asdfPluginUrl: 'https://github.com/emersonsoares/asdf-dotnet-core',
+    config: {
+      datasource: DotnetVersionDatasource.id,
+      packageName: 'dotnet-sdk',
+    },
+  },
   dprint: {
     asdfPluginUrl: 'https://github.com/asdf-community/asdf-dprint',
     config: {
@@ -132,6 +188,14 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
     config: {
       datasource: GithubReleasesDatasource.id,
       packageName: 'kayac/ecspresso',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  'editorconfig-checker': {
+    asdfPluginUrl: 'https://github.com/gabitchov/asdf-editorconfig-checker',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'editorconfig-checker/editorconfig-checker',
       extractVersion: '^v(?<version>\\S+)',
     },
   },
@@ -180,6 +244,30 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
       packageName: 'practicalscheme/gauche',
     },
   },
+  'github-cli': {
+    asdfPluginUrl: 'https://github.com/bartlomiejdanek/asdf-github-cli.git',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'cli/cli',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  gitleaks: {
+    asdfPluginUrl: 'https://github.com/jmcvetta/asdf-gitleaks',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'gitleaks/gitleaks',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  gleam: {
+    asdfPluginUrl: 'https://github.com/asdf-community/asdf-gleam.git',
+    config: {
+      datasource: GithubTagsDatasource.id,
+      packageName: 'gleam-lang/gleam',
+      extractVersion: '^v(?<version>.+)',
+    },
+  },
   gohugo: hugoDefinition,
   golang: {
     asdfPluginUrl: 'https://github.com/kennyp/asdf-golang',
@@ -194,6 +282,14 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
     config: {
       datasource: GithubTagsDatasource.id,
       packageName: 'golangci/golangci-lint',
+      extractVersion: '^v(?<version>.+)',
+    },
+  },
+  gomplate: {
+    asdfPluginUrl: 'https://github.com/sneakybeaky/asdf-gomplate',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'hairyhenderson/gomplate',
       extractVersion: '^v(?<version>.+)',
     },
   },
@@ -238,11 +334,19 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
       extractVersion: '^v(?<version>\\S+)',
     },
   },
+  istioctl: {
+    asdfPluginUrl: 'https://github.com/virtualstaticvoid/asdf-istioctl',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'istio/istio',
+      versioning: semverVersioning.id,
+    },
+  },
   java: {
     asdfPluginUrl: 'https://github.com/halcyon/asdf-java',
     config: (version) => {
       const adoptOpenJdkMatches = version.match(
-        /^adoptopenjdk-(?<version>\d\S+)/
+        /^adoptopenjdk-(?<version>\d\S+)/,
       )?.groups;
       if (adoptOpenJdkMatches) {
         return {
@@ -252,7 +356,7 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
         };
       }
       const adoptOpenJreMatches = version.match(
-        /^adoptopenjdk-jre-(?<version>\d\S+)/
+        /^adoptopenjdk-jre-(?<version>\d\S+)/,
       )?.groups;
       if (adoptOpenJreMatches) {
         return {
@@ -262,7 +366,7 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
         };
       }
       const temurinJdkMatches = version.match(
-        /^temurin-(?<version>\d\S+)/
+        /^temurin-(?<version>\d\S+)/,
       )?.groups;
       if (temurinJdkMatches) {
         return {
@@ -272,7 +376,7 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
         };
       }
       const temurinJreMatches = version.match(
-        /^temurin-jre-(?<version>\d\S+)/
+        /^temurin-jre-(?<version>\d\S+)/,
       )?.groups;
       if (temurinJreMatches) {
         return {
@@ -298,6 +402,22 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
     config: {
       datasource: GithubReleasesDatasource.id,
       packageName: 'casey/just',
+    },
+  },
+  k3s: {
+    asdfPluginUrl: 'https://github.com/dmpe/asdf-k3s',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'k3s-io/k3s',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  kind: {
+    asdfPluginUrl: 'https://github.com/johnlayton/asdf-kind',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'kubernetes-sigs/kind',
+      extractVersion: '^v(?<version>\\S+)',
     },
   },
   kotlin: {
@@ -332,6 +452,38 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
       extractVersion: '^v(?<version>\\S+)',
     },
   },
+  'markdownlint-cli2': {
+    asdfPluginUrl:
+      'https://github.com/paulo-ferraz-oliveira/asdf-markdownlint-cli2',
+    config: {
+      datasource: GithubTagsDatasource.id,
+      packageName: 'DavidAnson/markdownlint-cli2',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  maven: {
+    asdfPluginUrl: 'https://github.com/halcyon/asdf-maven',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'apache/maven',
+    },
+  },
+  mimirtool: {
+    asdfPluginUrl: 'https://github.com/asdf-community/asdf-mimirtool',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'grafana/mimir',
+      extractVersion: '^mimir-(?<version>\\S+)',
+    },
+  },
+  minikube: {
+    asdfPluginUrl: 'https://github.com/alvarobp/asdf-minikube.git',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'kubernetes/minikube',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
   nim: {
     asdfPluginUrl: 'https://github.com/asdf-community/asdf-nim',
     config: {
@@ -352,6 +504,30 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
     config: {
       datasource: GithubReleasesDatasource.id,
       packageName: 'ocaml/ocaml',
+    },
+  },
+  oci: {
+    asdfPluginUrl: 'https://github.com/yasn77/asdf-oci',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'oracle/oci-cli',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  opentofu: {
+    asdfPluginUrl: 'https://github.com/virtualroot/asdf-opentofu',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'opentofu/opentofu',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  packer: {
+    asdfPluginUrl: 'https://github.com/asdf-community/asdf-hashicorp',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'hashicorp/packer',
+      extractVersion: '^v(?<version>\\S+)',
     },
   },
   perl: {
@@ -393,6 +569,14 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
       extractVersion: '^v(?<version>.+)',
     },
   },
+  protoc: {
+    asdfPluginUrl: 'https://github.com/paxosglobal/asdf-protoc.git',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'protocolbuffers/protobuf',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
   pulumi: {
     asdfPluginUrl: 'https://github.com/canha/asdf-pulumi.git',
     config: {
@@ -409,6 +593,13 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
       extractVersion: '^v(?<version>\\S+)',
     },
   },
+  rebar: {
+    asdfPluginUrl: 'https://github.com/Stratus3D/asdf-rebar.git',
+    config: {
+      datasource: GithubTagsDatasource.id,
+      packageName: 'erlang/rebar3',
+    },
+  },
   ruby: {
     asdfPluginUrl: 'https://github.com/asdf-vm/asdf-ruby',
     config: {
@@ -422,6 +613,14 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
     config: {
       datasource: GithubTagsDatasource.id,
       packageName: 'rust-lang/rust',
+    },
+  },
+  sbt: {
+    asdfPluginUrl: 'https://github.com/bram2000/asdf-sbt.git',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'sbt/sbt',
+      extractVersion: '^v(?<version>\\S+)',
     },
   },
   scala: {
@@ -524,6 +723,30 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
       extractVersion: '^v(?<version>\\S+)',
     },
   },
+  vault: {
+    asdfPluginUrl: 'https://github.com/asdf-community/asdf-hashicorp',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'hashicorp/vault',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  yamllint: {
+    asdfPluginUrl: 'https://github.com/ericcornelissen/asdf-yamllint',
+    config: {
+      datasource: GithubTagsDatasource.id,
+      packageName: 'adrienverge/yamllint',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  yq: {
+    asdfPluginUrl: 'https://github.com/sudermanjr/asdf-yq',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'mikefarah/yq',
+      extractVersion: '^v(?<version>\\S+)',
+    },
+  },
   zig: {
     asdfPluginUrl: 'https://github.com/cheetah/asdf-zig',
     config: {
@@ -555,11 +778,18 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
     },
   },
   yamlfmt: {
-    asdfPluginUrl: 'https://github.com/kachick/asdf-yamlfmt',
+    asdfPluginUrl: 'https://github.com/mise-plugins/asdf-yamlfmt',
     config: {
       datasource: GithubReleasesDatasource.id,
       packageName: 'google/yamlfmt',
       extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  tuist: {
+    asdfPluginUrl: 'https://github.com/asdf-community/asdf-tuist',
+    config: {
+      datasource: GithubTagsDatasource.id,
+      packageName: 'tuist/tuist',
     },
   },
   typos: {
@@ -568,6 +798,13 @@ export const upgradeableTooling: Record<string, ToolingDefinition> = {
       datasource: GithubReleasesDatasource.id,
       packageName: 'crate-ci/typos',
       extractVersion: '^v(?<version>\\S+)',
+    },
+  },
+  uv: {
+    asdfPluginUrl: 'https://github.com/asdf-community/asdf-uv',
+    config: {
+      datasource: GithubReleasesDatasource.id,
+      packageName: 'astral-sh/uv',
     },
   },
 };

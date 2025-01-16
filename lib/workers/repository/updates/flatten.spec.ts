@@ -8,7 +8,6 @@ jest.mock('../../../util/git/semantic');
 let config: RenovateConfig;
 
 beforeEach(() => {
-  jest.resetAllMocks();
   config = getConfig();
   config.errors = [];
   config.warnings = [];
@@ -29,6 +28,11 @@ describe('workers/repository/updates/flatten', () => {
           lockFileMaintenance: {
             enabled: false,
           },
+        },
+        {
+          matchPackageNames: ['@monorepo/package'],
+          sourceUrl: 'https://github.com/some/monorepo',
+          sourceDirectory: "subfolder/{{ lookup (split packageName '/') 1 }}",
         },
       ];
       config.remediations = {
@@ -63,6 +67,17 @@ describe('workers/repository/updates/flatten', () => {
                   {
                     newValue: '2.0.0',
                     sourceUrl: 'https://github.com/org/repo',
+                  },
+                ],
+              },
+              {
+                depName: '@monorepo/package',
+                updates: [
+                  {
+                    newValue: '2.0.0',
+                    sourceUrl: 'https://github.com/some/monorepo',
+                    sourceDirectory:
+                      "subfolder/{{ lookup (split depName '/') 1 }}",
                   },
                 ],
               },
@@ -145,56 +160,69 @@ describe('workers/repository/updates/flatten', () => {
         ],
       };
       const res = await flattenUpdates(config, packageFiles);
-      expect(res).toHaveLength(14);
+      expect(res).toHaveLength(15);
       expect(
         res.every(
           (upgrade) =>
             upgrade.isLockFileMaintenance ||
             upgrade.isRemediation ||
-            is.number(upgrade.depIndex)
-        )
+            is.number(upgrade.depIndex),
+        ),
       ).toBeTrue();
       expect(
-        res.filter((update) => update.sourceRepoSlug)[0].sourceRepoSlug
+        res.filter((update) => update.sourceRepoSlug)[0].sourceRepoSlug,
       ).toBe('org-repo');
       expect(res.filter((update) => update.sourceRepo)[0].sourceRepo).toBe(
-        'org/repo'
+        'org/repo',
       );
       expect(
-        res.filter((update) => update.sourceRepoOrg)[0].sourceRepoOrg
+        res.filter((update) => update.sourceRepoOrg)[0].sourceRepoOrg,
       ).toBe('org');
       expect(
-        res.filter((update) => update.sourceRepoName)[0].sourceRepoName
+        res.filter((update) => update.sourceRepoName)[0].sourceRepoName,
       ).toBe('repo');
       expect(
-        res.filter((update) => update.sourceRepoSlug)[1].sourceRepoSlug
+        res.filter((update) => update.sourceRepoSlug)[1].sourceRepoSlug,
       ).toBe('org-repo');
       expect(res.filter((update) => update.sourceRepo)[1].sourceRepo).toBe(
-        'org/repo'
+        'org/repo',
       );
       expect(
-        res.filter((update) => update.sourceRepoOrg)[1].sourceRepoOrg
+        res.filter((update) => update.sourceRepoOrg)[1].sourceRepoOrg,
       ).toBe('org');
       expect(
-        res.filter((update) => update.sourceRepoName)[1].sourceRepoName
+        res.filter((update) => update.sourceRepoName)[1].sourceRepoName,
       ).toBe('repo');
       expect(
-        res.filter((update) => update.sourceRepoSlug)[2].sourceRepoSlug
-      ).toBe('nodejs-node');
-      expect(res.filter((update) => update.sourceRepo)[2].sourceRepo).toBe(
-        'nodejs/node'
+        res.filter((update) => update.depName === '@monorepo/package')[0],
+      ).toEqual(
+        expect.objectContaining({
+          depName: '@monorepo/package',
+          sourceRepoOrg: 'some',
+          sourceRepoName: 'monorepo',
+          sourceRepo: 'some/monorepo',
+          sourceRepoSlug: 'some-monorepo',
+          sourceUrl: 'https://github.com/some/monorepo',
+          sourceDirectory: 'subfolder/package',
+        }),
       );
       expect(
-        res.filter((update) => update.sourceRepoOrg)[2].sourceRepoOrg
+        res.filter((update) => update.sourceRepoSlug)[3].sourceRepoSlug,
+      ).toBe('nodejs-node');
+      expect(res.filter((update) => update.sourceRepo)[3].sourceRepo).toBe(
+        'nodejs/node',
+      );
+      expect(
+        res.filter((update) => update.sourceRepoOrg)[3].sourceRepoOrg,
       ).toBe('nodejs');
       expect(
-        res.filter((update) => update.sourceRepoName)[2].sourceRepoName
+        res.filter((update) => update.sourceRepoName)[3].sourceRepoName,
       ).toBe('node');
       expect(
         res.filter(
           (r) =>
-            r.updateType === 'lockFileMaintenance' && r.isLockFileMaintenance
-        )
+            r.updateType === 'lockFileMaintenance' && r.isLockFileMaintenance,
+        ),
       ).toHaveLength(2);
       expect(res.filter((r) => r.isVulnerabilityAlert)).toHaveLength(1);
     });

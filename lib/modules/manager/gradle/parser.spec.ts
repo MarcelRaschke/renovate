@@ -2,7 +2,12 @@ import is from '@sindresorhus/is';
 import { codeBlock } from 'common-tags';
 import { Fixtures } from '../../../../test/fixtures';
 import { fs, logger } from '../../../../test/util';
-import { parseGradle, parseKotlinSource, parseProps } from './parser';
+import {
+  parseGradle,
+  parseJavaToolchainVersion,
+  parseKotlinSource,
+  parseProps,
+} from './parser';
 import { GRADLE_PLUGINS, REGISTRY_URLS } from './parser/common';
 
 jest.mock('../../../util/fs');
@@ -13,7 +18,7 @@ function mockFs(files: Record<string, string>): void {
       return existingFileNameWithPath
         .slice(0, existingFileNameWithPath.lastIndexOf('/') + 1)
         .concat(otherFileName);
-    }
+    },
   );
 }
 
@@ -157,10 +162,15 @@ describe('modules/manager/gradle/parser', () => {
       it('map with interpolated dependency strings', () => {
         const input = codeBlock`
           def slfj4Version = "2.0.0"
+          def lifecycle_version = "2.5.1"
           libraries = [
             jcl: "org.slf4j:jcl-over-slf4j:\${slfj4Version}",
             releaseCoroutines: "org.jetbrains.kotlinx:kotlinx-coroutines-core:0.26.1-eap13"
             api: "org.slf4j:slf4j-api:$slfj4Version",
+            lifecycle: [
+                "androidx.lifecycle:lifecycle-runtime-ktx:$lifecycle_version",
+                "androidx.lifecycle:lifecycle-viewmodel-ktx:$lifecycle_version"
+            ]
           ]
           foo = [ group: "org.slf4j", name: "slf4j-ext", version: slfj4Version ]
         `;
@@ -181,6 +191,16 @@ describe('modules/manager/gradle/parser', () => {
             depName: 'org.slf4j:slf4j-api',
             groupName: 'slfj4Version',
             currentValue: '2.0.0',
+          },
+          {
+            depName: 'androidx.lifecycle:lifecycle-runtime-ktx',
+            groupName: 'lifecycle_version',
+            currentValue: '2.5.1',
+          },
+          {
+            depName: 'androidx.lifecycle:lifecycle-viewmodel-ktx',
+            groupName: 'lifecycle_version',
+            currentValue: '2.5.1',
           },
           {
             depName: 'org.slf4j:slf4j-ext',
@@ -721,6 +741,7 @@ describe('modules/manager/gradle/parser', () => {
       ${''}                                         | ${'library("foo", "bar", "baz", "qux").version("1.2.3")'}       | ${null}
       ${''}                                         | ${'library("foo.bar", "foo", "bar").version("1.2.3", "4.5.6")'} | ${null}
       ${''}                                         | ${'library("foo", bar, "baz").version("1.2.3")'}                | ${null}
+      ${''}                                         | ${'plugin("foo.bar", "foo")'}                                   | ${null}
       ${''}                                         | ${'plugin("foo.bar", "foo").version("1.2.3")'}                  | ${{ depName: 'foo', currentValue: '1.2.3' }}
       ${''}                                         | ${'alias("foo.bar").to("foo", "bar").version("1.2.3")'}         | ${{ depName: 'foo:bar', currentValue: '1.2.3' }}
       ${'version("baz", "1.2.3")'}                  | ${'alias("foo.bar").to("foo", "bar").versionRef("baz")'}        | ${{ depName: 'foo:bar', currentValue: '1.2.3' }}
@@ -738,15 +759,27 @@ describe('modules/manager/gradle/parser', () => {
 
   describe('heuristic dependency matching', () => {
     it.each`
-      input                                  | output
-      ${'("foo", "bar", "1.2.3")'}           | ${{ depName: 'foo:bar', currentValue: '1.2.3' }}
-      ${'("foo", "bar", "1.2.3", "4.5.6")'}  | ${null}
-      ${'(["foo", "bar", "1.2.3"])'}         | ${null}
-      ${'someMethod("foo", "bar", "1.2.3")'} | ${{ depName: 'foo:bar', currentValue: '1.2.3' }}
-      ${'listOf("foo", "bar", "baz")'}       | ${null}
+      input                                                                    | output
+      ${'("foo", "bar", "1.2.3")'}                                             | ${{ depName: 'foo:bar', currentValue: '1.2.3' }}
+      ${'("foo", "bar", "1.2.3", "4.5.6")'}                                    | ${null}
+      ${'(["foo", "bar", "1.2.3"])'}                                           | ${null}
+      ${'someMethod("foo", "bar", "1.2.3")'}                                   | ${{ depName: 'foo:bar', currentValue: '1.2.3' }}
+      ${'listOf("foo", "bar", "baz")'}                                         | ${null}
+      ${'java { registerFeature(foo) { capability("foo", "bar", "1.2.3") } }'} | ${null}
     `('$input', ({ input, output }) => {
       const { deps } = parseGradle(input);
       expect(deps).toMatchObject([output].filter(is.truthy));
+    });
+
+    it('handles 3 independent dependencies mismatched as groupId, artifactId, version', () => {
+      const { deps } = parseGradle(
+        'someConfig("foo:bar:1.2.3", "foo:baz:4.5.6", "foo:qux:7.8.9")',
+      );
+      expect(deps).toMatchObject([
+        { depName: 'foo:bar', currentValue: '1.2.3' },
+        { depName: 'foo:baz', currentValue: '4.5.6' },
+        { depName: 'foo:qux', currentValue: '7.8.9' },
+      ]);
     });
   });
 
@@ -767,10 +800,109 @@ describe('modules/manager/gradle/parser', () => {
       const { deps } = parseGradle(content, {}, 'build.gradle');
       const replacementIndices = deps.map(({ managerData, currentValue }) =>
         // TODO #22198
-        content.slice(managerData!.fileReplacePosition).indexOf(currentValue!)
+        content.slice(managerData!.fileReplacePosition).indexOf(currentValue!),
       );
       expect(replacementIndices.every((idx) => idx === 0)).toBeTrue();
-      expect(deps).toMatchSnapshot();
+      expect(deps).toMatchObject([
+        {
+          currentValue: '1.5.2.RELEASE',
+          depName: 'org.springframework.boot:spring-boot-gradle-plugin',
+          groupName: 'springBootVersion',
+          managerData: {
+            fileReplacePosition: 53,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '1.2.3',
+          depName: 'com.github.jengelman.gradle.plugins:shadow',
+          managerData: {
+            fileReplacePosition: 417,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '0.1',
+          depName: 'com.fkorotkov:gradle-libraries-plugin',
+          managerData: {
+            fileReplacePosition: 481,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '0.2.3',
+          depName:
+            'gradle.plugin.se.patrikerdes:gradle-use-latest-versions-plugin',
+          managerData: {
+            fileReplacePosition: 568,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '3.1.1',
+          depName: 'org.apache.openjpa:openjpa',
+          managerData: {
+            fileReplacePosition: 621,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '0.13.0',
+          depName: 'com.gradle.publish:plugin-publish-plugin',
+          managerData: {
+            fileReplacePosition: 688,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '6.0.9.RELEASE',
+          depName: 'org.grails:gorm-hibernate5-spring-boot',
+          managerData: {
+            fileReplacePosition: 1882,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '6.0.5',
+          depName: 'mysql:mysql-connector-java',
+          managerData: {
+            fileReplacePosition: 1938,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '1.0-groovy-2.4',
+          depName: 'org.spockframework:spock-spring',
+          managerData: {
+            fileReplacePosition: 1996,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '1.3',
+          depName: 'org.hamcrest:hamcrest-core',
+          managerData: {
+            fileReplacePosition: 2101,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '3.1',
+          depName: 'cglib:cglib-nodep',
+          managerData: {
+            fileReplacePosition: 2189,
+            packageFile: 'build.gradle',
+          },
+        },
+        {
+          currentValue: '3.1.1',
+          depName: 'org.apache.openjpa:openjpa',
+          managerData: {
+            fileReplacePosition: 2295,
+            packageFile: 'build.gradle',
+          },
+        },
+      ]);
     });
   });
 
@@ -800,7 +932,7 @@ describe('modules/manager/gradle/parser', () => {
 
     it('attaches packageFile', () => {
       expect(
-        parseProps('foo = bar', 'foo/bar/gradle.properties')
+        parseProps('foo = bar', 'foo/bar/gradle.properties'),
       ).toMatchObject({
         vars: { foo: { packageFile: 'foo/bar/gradle.properties' } },
       });
@@ -878,7 +1010,7 @@ describe('modules/manager/gradle/parser', () => {
         [def, input].join('\n'),
         {},
         '',
-        fileContents
+        fileContents,
       );
       expect(vars).toMatchObject(output);
     });
@@ -889,10 +1021,10 @@ describe('modules/manager/gradle/parser', () => {
         {},
         '',
         fileContents,
-        3
+        3,
       );
       expect(logger.logger.debug).toHaveBeenCalledWith(
-        'Max recursion depth reached in script file: foo/bar.gradle'
+        'Max recursion depth reached in script file: foo/bar.gradle',
       );
       expect(vars).toBeEmpty();
     });
@@ -925,6 +1057,7 @@ describe('modules/manager/gradle/parser', () => {
       ${''}              | ${'unknown { toolVersion = "1.2.3" }'}                           | ${null}
       ${''}              | ${'composeOptions { kotlinCompilerExtensionVersion = "1.2.3" }'} | ${{ depName: 'composeOptions', packageName: GRADLE_PLUGINS['composeOptions'][1], currentValue: '1.2.3' }}
       ${''}              | ${'jmh { jmhVersion = "1.2.3" }'}                                | ${{ depName: 'jmh', packageName: GRADLE_PLUGINS['jmh'][1], currentValue: '1.2.3' }}
+      ${''}              | ${'micronaut { version = "1.2.3" }'}                             | ${{ depName: 'micronaut', packageName: GRADLE_PLUGINS['micronaut'][1], currentValue: '1.2.3' }}
     `('$def | $input', ({ def, input, output }) => {
       const { deps } = parseGradle([def, input].join('\n'));
       expect(deps).toMatchObject([output].filter(is.truthy));
@@ -940,6 +1073,11 @@ describe('modules/manager/gradle/parser', () => {
 
         object Libraries {
           val deps = mapOf("api" to "org.slf4j:slf4j-api:\${Versions.baz}")
+          val deps2 = listOf(
+            "androidx.appcompat:appcompat:4.5.6",
+            "androidx.core:core-ktx:\${Versions.baz}",
+            listOf("androidx.webkit:webkit:\${Versions.baz}")
+          )
           val dep: String = "foo:bar:" + Versions.baz
         }
       `;
@@ -955,6 +1093,20 @@ describe('modules/manager/gradle/parser', () => {
         deps: [
           {
             depName: 'org.slf4j:slf4j-api',
+            groupName: 'Versions.baz',
+            currentValue: '1.2.3',
+          },
+          {
+            depName: 'androidx.appcompat:appcompat',
+            currentValue: '4.5.6',
+          },
+          {
+            depName: 'androidx.core:core-ktx',
+            groupName: 'Versions.baz',
+            currentValue: '1.2.3',
+          },
+          {
+            depName: 'androidx.webkit:webkit',
             groupName: 'Versions.baz',
             currentValue: '1.2.3',
           },
@@ -1033,6 +1185,62 @@ describe('modules/manager/gradle/parser', () => {
           },
         ],
       });
+    });
+
+    it('imported objects', () => {
+      const input = codeBlock`
+        object ModuleConfiguration {
+          object Build {
+            object Database {
+              const val h2Version = "2.0.206"
+            }
+          }
+        }
+      `;
+
+      const gradleKtsInput = codeBlock`
+        import ModuleConfiguration.Build.Database
+        dependencies {
+          runtimeOnly("com.h2database:h2:\${Database.h2Version}")
+        }
+      `;
+
+      const { vars } = parseKotlinSource(input);
+      const res = parseGradle(gradleKtsInput, vars);
+      expect(res).toMatchObject({
+        vars: {
+          'ModuleConfiguration.Build.Database.h2Version': {
+            key: 'ModuleConfiguration.Build.Database.h2Version',
+            value: '2.0.206',
+          },
+        },
+        deps: [
+          {
+            depName: 'com.h2database:h2',
+            currentValue: '2.0.206',
+            groupName: 'ModuleConfiguration.Build.Database.h2Version',
+          },
+        ],
+      });
+    });
+  });
+
+  describe('Java language version', () => {
+    it.each`
+      input                                                                            | output
+      ${'java { toolchain { languageVersion = JavaLanguageVersion.of(22) } }'}         | ${'22'}
+      ${'java { toolchain.languageVersion.set(JavaLanguageVersion.of(16)) }'}          | ${'16'}
+      ${'java.toolchain { languageVersion.set(JavaLanguageVersion.of(17)) }'}          | ${'17'}
+      ${'java.toolchain.languageVersion = JavaLanguageVersion.of(21)'}                 | ${'21'}
+      ${'kotlin { jvmToolchain { languageVersion = JavaLanguageVersion.of(17) } }'}    | ${'17'}
+      ${'kotlin { jvmToolchain { languageVersion.set(JavaLanguageVersion.of(17)) } }'} | ${'17'}
+      ${'kotlin.jvmToolchain { languageVersion.set(JavaLanguageVersion.of(8)) }'}      | ${'8'}
+      ${'kotlin { jvmToolchain(11) }'}                                                 | ${'11'}
+      ${'kotlin.jvmToolchain(16)'}                                                     | ${'16'}
+      ${'dependencies { implementation "com.google.protobuf:protobuf-java:2.17.0" }'}  | ${null}
+    `('$input', ({ input, output }) => {
+      const javaLanguageVersion = parseJavaToolchainVersion(input);
+      expect(javaLanguageVersion).toBe(output);
     });
   });
 });

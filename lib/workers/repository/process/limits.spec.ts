@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
-import { RenovateConfig, partial, platform, scm } from '../../../../test/util';
+import type { RenovateConfig } from '../../../../test/util';
+import { partial, platform, scm } from '../../../../test/util';
 import type { Pr } from '../../../modules/platform/types';
 import type { BranchConfig } from '../../types';
 import * as limits from './limits';
@@ -7,7 +8,6 @@ import * as limits from './limits';
 let config: RenovateConfig;
 
 beforeEach(() => {
-  jest.resetAllMocks();
   config = partial<RenovateConfig>({
     branchPrefix: 'foo/',
     onboardingBranch: 'bar/configure',
@@ -47,10 +47,10 @@ describe('workers/repository/process/limits', () => {
       expect(res).toBe(5);
     });
 
-    it('returns 99 if no hourly limit', async () => {
+    it('returns MAX_SAFE_INTEGER if no hourly limit', async () => {
       config.prHourlyLimit = 0;
       const res = await limits.getPrHourlyRemaining(config);
-      expect(res).toBe(99);
+      expect(res).toBe(Number.MAX_SAFE_INTEGER);
     });
   });
 
@@ -63,9 +63,9 @@ describe('workers/repository/process/limits', () => {
               partial<Pr>({
                 sourceBranch: branchName,
                 state: 'open',
-              })
+              }),
             )
-          : Promise.reject('some error')
+          : Promise.reject(new Error('some error')),
       );
       const branches: BranchConfig[] = [
         { branchName: 'test' },
@@ -75,10 +75,10 @@ describe('workers/repository/process/limits', () => {
       expect(res).toBe(19);
     });
 
-    it('returns 99 if no concurrent limit', async () => {
+    it('returns MAX_SAFE_INTEGER if no concurrent limit', async () => {
       config.prConcurrentLimit = 0;
       const res = await limits.getConcurrentPrsRemaining(config, []);
-      expect(res).toBe(99);
+      expect(res).toBe(Number.MAX_SAFE_INTEGER);
     });
   });
 
@@ -121,7 +121,7 @@ describe('workers/repository/process/limits', () => {
       config.branchConcurrentLimit = 0;
       config.prConcurrentLimit = 20;
       const res = await limits.getConcurrentBranchesRemaining(config, []);
-      expect(res).toBe(99);
+      expect(res).toBe(Number.MAX_SAFE_INTEGER);
     });
 
     it('returns 10 if no limits are set', async () => {
@@ -134,7 +134,7 @@ describe('workers/repository/process/limits', () => {
       // TODO: #22198
       const res = await limits.getConcurrentBranchesRemaining(
         config,
-        null as never
+        null as never,
       );
       expect(res).toBe(2);
     });
@@ -151,8 +151,8 @@ describe('workers/repository/process/limits', () => {
             prHourlyLimit: 3,
             branchConcurrentLimit: 5,
           },
-          []
-        )
+          [],
+        ),
       ).resolves.toBe(3);
 
       await expect(
@@ -162,8 +162,8 @@ describe('workers/repository/process/limits', () => {
             prHourlyLimit: 11,
             branchConcurrentLimit: 7,
           },
-          []
-        )
+          [],
+        ),
       ).resolves.toBe(7);
     });
   });

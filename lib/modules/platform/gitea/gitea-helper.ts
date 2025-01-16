@@ -1,5 +1,6 @@
 import type { BranchStatus } from '../../../types';
-import { GiteaHttp, GiteaHttpOptions } from '../../../util/http/gitea';
+import type { GiteaHttpOptions } from '../../../util/http/gitea';
+import { GiteaHttp } from '../../../util/http/gitea';
 import { getQueryString } from '../../../util/url';
 import type {
   Branch,
@@ -19,7 +20,6 @@ import type {
   PR,
   PRCreateParams,
   PRMergeParams,
-  PRSearchParams,
   PRUpdateParams,
   PrReviewersParams,
   Repo,
@@ -28,10 +28,9 @@ import type {
   RepoSearchResults,
   User,
 } from './types';
+import { API_PATH } from './utils';
 
-const giteaHttp = new GiteaHttp();
-
-const API_PATH = '/api/v1';
+export const giteaHttp = new GiteaHttp();
 
 const urlEscape = (raw: string): string => encodeURIComponent(raw);
 const commitStatusStates: CommitStatusType[] = [
@@ -44,7 +43,7 @@ const commitStatusStates: CommitStatusType[] = [
 ];
 
 export async function getCurrentUser(
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<User> {
   const url = `${API_PATH}/user`;
   const res = await giteaHttp.getJson<User>(url, options);
@@ -59,7 +58,7 @@ export async function getVersion(options?: GiteaHttpOptions): Promise<string> {
 
 export async function searchRepos(
   params: RepoSearchParams,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Repo[]> {
   const query = getQueryString(params);
   const url = `${API_PATH}/repos/search?${query}`;
@@ -70,16 +69,29 @@ export async function searchRepos(
 
   if (!res.body.ok) {
     throw new Error(
-      'Unable to search for repositories, ok flag has not been set'
+      'Unable to search for repositories, ok flag has not been set',
     );
   }
 
   return res.body.data;
 }
 
+export async function orgListRepos(
+  organization: string,
+  options?: GiteaHttpOptions,
+): Promise<Repo[]> {
+  const url = `${API_PATH}/orgs/${organization}/repos`;
+  const res = await giteaHttp.getJson<Repo[]>(url, {
+    ...options,
+    paginate: true,
+  });
+
+  return res.body;
+}
+
 export async function getRepo(
   repoPath: string,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Repo> {
   const url = `${API_PATH}/repos/${repoPath}`;
   const res = await giteaHttp.getJson<Repo>(url, options);
@@ -90,11 +102,11 @@ export async function getRepoContents(
   repoPath: string,
   filePath: string,
   ref?: string | null,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<RepoContents> {
   const query = getQueryString(ref ? { ref } : {});
   const url = `${API_PATH}/repos/${repoPath}/contents/${urlEscape(
-    filePath
+    filePath,
   )}?${query}`;
   const res = await giteaHttp.getJson<RepoContents>(url, options);
 
@@ -108,7 +120,7 @@ export async function getRepoContents(
 export async function createPR(
   repoPath: string,
   params: PRCreateParams,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<PR> {
   const url = `${API_PATH}/repos/${repoPath}/pulls`;
   const res = await giteaHttp.postJson<PR>(url, {
@@ -123,7 +135,7 @@ export async function updatePR(
   repoPath: string,
   idx: number,
   params: PRUpdateParams,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<PR> {
   const url = `${API_PATH}/repos/${repoPath}/pulls/${idx}`;
   const res = await giteaHttp.patchJson<PR>(url, {
@@ -137,7 +149,7 @@ export async function updatePR(
 export async function closePR(
   repoPath: string,
   idx: number,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<void> {
   await updatePR(repoPath, idx, {
     ...options,
@@ -149,7 +161,7 @@ export async function mergePR(
   repoPath: string,
   idx: number,
   params: PRMergeParams,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<void> {
   const url = `${API_PATH}/repos/${repoPath}/pulls/${idx}/merge`;
   await giteaHttp.postJson(url, {
@@ -161,7 +173,7 @@ export async function mergePR(
 export async function getPR(
   repoPath: string,
   idx: number,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<PR> {
   const url = `${API_PATH}/repos/${repoPath}/pulls/${idx}`;
   const res = await giteaHttp.getJson<PR>(url, options);
@@ -172,7 +184,7 @@ export async function requestPrReviewers(
   repoPath: string,
   idx: number,
   params: PrReviewersParams,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<void> {
   const url = `${API_PATH}/repos/${repoPath}/pulls/${idx}/requested_reviewers`;
   await giteaHttp.postJson(url, {
@@ -181,25 +193,10 @@ export async function requestPrReviewers(
   });
 }
 
-export async function searchPRs(
-  repoPath: string,
-  params: PRSearchParams,
-  options?: GiteaHttpOptions
-): Promise<PR[]> {
-  const query = getQueryString(params);
-  const url = `${API_PATH}/repos/${repoPath}/pulls?${query}`;
-  const res = await giteaHttp.getJson<PR[]>(url, {
-    ...options,
-    paginate: true,
-  });
-
-  return res.body;
-}
-
 export async function createIssue(
   repoPath: string,
   params: IssueCreateParams,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Issue> {
   const url = `${API_PATH}/repos/${repoPath}/issues`;
   const res = await giteaHttp.postJson<Issue>(url, {
@@ -214,7 +211,7 @@ export async function updateIssue(
   repoPath: string,
   idx: number,
   params: IssueUpdateParams,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Issue> {
   const url = `${API_PATH}/repos/${repoPath}/issues/${idx}`;
   const res = await giteaHttp.patchJson<Issue>(url, {
@@ -229,7 +226,7 @@ export async function updateIssueLabels(
   repoPath: string,
   idx: number,
   params: IssueUpdateLabelsParams,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Label[]> {
   const url = `${API_PATH}/repos/${repoPath}/issues/${idx}/labels`;
   const res = await giteaHttp.putJson<Label[]>(url, {
@@ -243,7 +240,7 @@ export async function updateIssueLabels(
 export async function closeIssue(
   repoPath: string,
   idx: number,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<void> {
   await updateIssue(repoPath, idx, {
     ...options,
@@ -254,7 +251,7 @@ export async function closeIssue(
 export async function searchIssues(
   repoPath: string,
   params: IssueSearchParams,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Issue[]> {
   const query = getQueryString({ ...params, type: 'issues' });
   const url = `${API_PATH}/repos/${repoPath}/issues?${query}`;
@@ -269,7 +266,7 @@ export async function searchIssues(
 export async function getIssue(
   repoPath: string,
   idx: number,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Issue> {
   const url = `${API_PATH}/repos/${repoPath}/issues/${idx}`;
   const res = await giteaHttp.getJson<Issue>(url, options);
@@ -278,7 +275,7 @@ export async function getIssue(
 
 export async function getRepoLabels(
   repoPath: string,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Label[]> {
   const url = `${API_PATH}/repos/${repoPath}/labels`;
   const res = await giteaHttp.getJson<Label[]>(url, options);
@@ -288,7 +285,7 @@ export async function getRepoLabels(
 
 export async function getOrgLabels(
   orgName: string,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Label[]> {
   const url = `${API_PATH}/orgs/${orgName}/labels`;
   const res = await giteaHttp.getJson<Label[]>(url, options);
@@ -300,7 +297,7 @@ export async function unassignLabel(
   repoPath: string,
   issue: number,
   label: number,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<void> {
   const url = `${API_PATH}/repos/${repoPath}/issues/${issue}/labels/${label}`;
   await giteaHttp.deleteJson(url, options);
@@ -310,7 +307,7 @@ export async function createComment(
   repoPath: string,
   issue: number,
   body: string,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Comment> {
   const params: CommentCreateParams = { body };
   const url = `${API_PATH}/repos/${repoPath}/issues/${issue}/comments`;
@@ -326,7 +323,7 @@ export async function updateComment(
   repoPath: string,
   idx: number,
   body: string,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Comment> {
   const params: CommentUpdateParams = { body };
   const url = `${API_PATH}/repos/${repoPath}/issues/comments/${idx}`;
@@ -341,7 +338,7 @@ export async function updateComment(
 export async function deleteComment(
   repoPath: string,
   idx: number,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<void> {
   const url = `${API_PATH}/repos/${repoPath}/issues/comments/${idx}`;
   await giteaHttp.deleteJson(url, options);
@@ -350,7 +347,7 @@ export async function deleteComment(
 export async function getComments(
   repoPath: string,
   issue: number,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Comment[]> {
   const url = `${API_PATH}/repos/${repoPath}/issues/${issue}/comments`;
   const res = await giteaHttp.getJson<Comment[]>(url, options);
@@ -362,7 +359,7 @@ export async function createCommitStatus(
   repoPath: string,
   branchCommit: string,
   params: CommitStatusCreateParams,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<CommitStatus> {
   const url = `${API_PATH}/repos/${repoPath}/statuses/${branchCommit}`;
   const res = await giteaHttp.postJson<CommitStatus>(url, {
@@ -397,10 +394,7 @@ export const renovateToGiteaStatusMapping: Record<
 function filterStatus(data: CommitStatus[]): CommitStatus[] {
   const ret: Record<string, CommitStatus> = {};
   for (const i of data) {
-    if (
-      !ret[i.context] ||
-      new Date(ret[i.context].created_at) < new Date(i.created_at)
-    ) {
+    if (!ret[i.context] || ret[i.context].id < i.id) {
       ret[i.context] = i;
     }
   }
@@ -410,10 +404,10 @@ function filterStatus(data: CommitStatus[]): CommitStatus[] {
 export async function getCombinedCommitStatus(
   repoPath: string,
   branchName: string,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<CombinedCommitStatus> {
   const url = `${API_PATH}/repos/${repoPath}/commits/${urlEscape(
-    branchName
+    branchName,
   )}/statuses`;
   const res = await giteaHttp.getJson<CommitStatus[]>(url, {
     ...options,
@@ -421,20 +415,21 @@ export async function getCombinedCommitStatus(
   });
 
   let worstState = 0;
-  for (const cs of filterStatus(res.body)) {
+  const statuses = filterStatus(res.body);
+  for (const cs of statuses) {
     worstState = Math.max(worstState, commitStatusStates.indexOf(cs.status));
   }
 
   return {
     worstStatus: commitStatusStates[worstState],
-    statuses: res.body,
+    statuses,
   };
 }
 
 export async function getBranch(
   repoPath: string,
   branchName: string,
-  options?: GiteaHttpOptions
+  options?: GiteaHttpOptions,
 ): Promise<Branch> {
   const url = `${API_PATH}/repos/${repoPath}/branches/${urlEscape(branchName)}`;
   const res = await giteaHttp.getJson<Branch>(url, options);

@@ -13,7 +13,7 @@ export { mergeChildConfig };
 
 export function getManagerConfig(
   config: RenovateConfig,
-  manager: string
+  manager: string,
 ): ManagerConfig {
   let managerConfig: ManagerConfig = {
     ...config,
@@ -31,14 +31,31 @@ export function getManagerConfig(
   return managerConfig;
 }
 
+export function removeGlobalConfig(
+  config: RenovateConfig,
+  keepInherited: boolean,
+): RenovateConfig {
+  const outputConfig: RenovateConfig = { ...config };
+  for (const option of options.getOptions()) {
+    if (keepInherited && option.inheritConfigSupport) {
+      continue;
+    }
+    if (option.globalOnly) {
+      delete outputConfig[option.name];
+    }
+  }
+  return outputConfig;
+}
+
 export function filterConfig(
   inputConfig: AllConfig,
-  targetStage: RenovateConfigStage
+  targetStage: RenovateConfigStage,
 ): AllConfig {
   logger.trace({ config: inputConfig }, `filterConfig('${targetStage}')`);
   const outputConfig: RenovateConfig = { ...inputConfig };
   const stages: (string | undefined)[] = [
     'global',
+    'inherit',
     'repository',
     'package',
     'branch',
