@@ -1,4 +1,3 @@
-import { parse } from '@iarna/toml';
 import is from '@sindresorhus/is';
 import { quote } from 'shlex';
 import { TEMPORARY_ERROR } from '../../../constants/error-messages';
@@ -13,50 +12,82 @@ import {
   readLocalFile,
   writeLocalFile,
 } from '../../../util/fs';
+import { getGitEnvironmentVariables } from '../../../util/git/auth';
 import { find } from '../../../util/host-rules';
 import { regEx } from '../../../util/regex';
 import { Result } from '../../../util/result';
+import { parse as parseToml } from '../../../util/toml';
+import { parseUrl } from '../../../util/url';
 import { PypiDatasource } from '../../datasource/pypi';
+import { getGoogleAuthHostRule } from '../../datasource/util';
 import type { UpdateArtifact, UpdateArtifactsResult } from '../types';
 import { Lockfile, PoetrySchemaToml } from './schema';
 import type { PoetryFile, PoetrySource } from './types';
 
 export function getPythonConstraint(
-  existingLockFileContent: string
+  pyProjectContent: string,
+  existingLockFileContent: string,
 ): string | null {
-  return Result.parse(
-    existingLockFileContent,
-    Lockfile.transform(({ pythonVersions }) => pythonVersions)
+  // Read Python version from `pyproject.toml` first as it could have been updated
+  const pyprojectPythonConstraint = Result.parse(
+    pyProjectContent,
+    PoetrySchemaToml.transform(
+      ({ packageFileContent }) =>
+        packageFileContent.deps.find((dep) => dep.depName === 'python')
+          ?.currentValue,
+    ),
   ).unwrapOrNull();
+  if (pyprojectPythonConstraint) {
+    logger.debug('Using python version from pyproject.toml');
+    return pyprojectPythonConstraint;
+  }
+
+  const lockfilePythonConstraint = Result.parse(
+    existingLockFileContent,
+    Lockfile.transform(({ pythonVersions }) => pythonVersions),
+  ).unwrapOrNull();
+  if (lockfilePythonConstraint) {
+    logger.debug('Using python version from poetry.lock');
+    return lockfilePythonConstraint;
+  }
+
+  return null;
 }
 
 export function getPoetryRequirement(
   pyProjectContent: string,
-  existingLockFileContent: string
+  existingLockFileContent: string,
 ): undefined | string | null {
   // Read Poetry version from first line of poetry.lock
   const firstLine = existingLockFileContent.split('\n')[0];
   const poetryVersionMatch = firstLine.match(/by Poetry ([\d\\.]+)/);
   if (poetryVersionMatch?.[1]) {
-    logger.debug('Using poetry version from poetry.lock header');
-    return poetryVersionMatch[1];
+    const poetryVersion = poetryVersionMatch[1];
+    logger.debug(
+      `Using poetry version ${poetryVersion} from poetry.lock header`,
+    );
+    return poetryVersion;
   }
 
   const { val: lockfilePoetryConstraint } = Result.parse(
     existingLockFileContent,
-    Lockfile.transform(({ poetryConstraint }) => poetryConstraint)
+    Lockfile.transform(({ poetryConstraint }) => poetryConstraint),
   ).unwrap();
   if (lockfilePoetryConstraint) {
-    logger.debug('Using poetry version from poetry.lock metadata');
+    logger.debug(
+      `Using poetry version ${lockfilePoetryConstraint} from poetry.lock metadata`,
+    );
     return lockfilePoetryConstraint;
   }
 
   const { val: pyprojectPoetryConstraint } = Result.parse(
     pyProjectContent,
-    PoetrySchemaToml.transform(({ poetryRequirement }) => poetryRequirement)
+    PoetrySchemaToml.transform(({ poetryRequirement }) => poetryRequirement),
   ).unwrap();
   if (pyprojectPoetryConstraint) {
-    logger.debug('Using poetry version from pyproject.toml');
+    logger.debug(
+      `Using poetry version ${pyprojectPoetryConstraint} from pyproject.toml`,
+    );
     return pyprojectPoetryConstraint;
   }
 
@@ -66,13 +97,13 @@ export function getPoetryRequirement(
 function getPoetrySources(content: string, fileName: string): PoetrySource[] {
   let pyprojectFile: PoetryFile;
   try {
-    pyprojectFile = parse(content);
+    pyprojectFile = parseToml(content) as PoetryFile;
   } catch (err) {
     logger.debug({ err }, 'Error parsing pyproject.toml file');
     return [];
   }
   if (!pyprojectFile.tool?.poetry) {
-    logger.debug(`{$fileName} contains no poetry section`);
+    logger.debug(`${fileName} contains no poetry section`);
     return [];
   }
 
@@ -86,20 +117,39 @@ function getPoetrySources(content: string, fileName: string): PoetrySource[] {
   return sourceArray;
 }
 
-function getMatchingHostRule(url: string | undefined): HostRule {
+async function getMatchingHostRule(url: string | undefined): Promise<HostRule> {
   const scopedMatch = find({ hostType: PypiDatasource.id, url });
-  return is.nonEmptyObject(scopedMatch) ? scopedMatch : find({ url });
+  const hostRule = is.nonEmptyObject(scopedMatch) ? scopedMatch : find({ url });
+  if (hostRule) {
+    return hostRule;
+  }
+
+  const parsedUrl = parseUrl(url);
+  if (!parsedUrl) {
+    logger.once.debug(`Failed to parse URL ${url}`);
+    return {};
+  }
+
+  if (parsedUrl.hostname.endsWith('.pkg.dev')) {
+    const hostRule = await getGoogleAuthHostRule();
+    if (hostRule) {
+      return hostRule;
+    }
+    logger.once.debug(`Could not get Google access token (url=${url})`);
+  }
+
+  return {};
 }
 
-function getSourceCredentialVars(
+async function getSourceCredentialVars(
   pyprojectContent: string,
-  packageFileName: string
-): Record<string, string> {
+  packageFileName: string,
+): Promise<NodeJS.ProcessEnv> {
   const poetrySources = getPoetrySources(pyprojectContent, packageFileName);
-  const envVars: Record<string, string> = {};
+  const envVars: NodeJS.ProcessEnv = {};
 
   for (const source of poetrySources) {
-    const matchingHostRule = getMatchingHostRule(source.url);
+    const matchingHostRule = await getMatchingHostRule(source.url);
     const formattedSourceName = source.name
       .replace(regEx(/(\.|-)+/g), '_')
       .toUpperCase();
@@ -153,17 +203,21 @@ export async function updateArtifacts({
           .map((dep) => dep.depName)
           .filter(is.string)
           .map((dep) => quote(dep))
-          .join(' ')}`
+          .join(' ')}`,
       );
     }
     const pythonConstraint =
       config?.constraints?.python ??
-      getPythonConstraint(existingLockFileContent);
+      getPythonConstraint(newPackageFileContent, existingLockFileContent);
     const poetryConstraint =
       config.constraints?.poetry ??
       getPoetryRequirement(newPackageFileContent, existingLockFileContent);
     const extraEnv = {
-      ...getSourceCredentialVars(newPackageFileContent, packageFileName),
+      ...(await getSourceCredentialVars(
+        newPackageFileContent,
+        packageFileName,
+      )),
+      ...getGitEnvironmentVariables(['poetry']),
       PIP_CACHE_DIR: await ensureCacheDir('pip'),
     };
 
@@ -171,6 +225,7 @@ export async function updateArtifacts({
       cwdFile: packageFileName,
       extraEnv,
       docker: {},
+      userConfiguredEnv: config.env,
       toolConstraints: [
         { toolName: 'python', constraint: pythonConstraint },
         { toolName: 'poetry', constraint: poetryConstraint },

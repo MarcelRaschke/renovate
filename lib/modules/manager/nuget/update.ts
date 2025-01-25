@@ -1,4 +1,5 @@
-import semver, { ReleaseType } from 'semver';
+import type { ReleaseType } from 'semver';
+import semver from 'semver';
 import { XmlDocument } from 'xmldoc';
 import { logger } from '../../../logger';
 import { replaceAt } from '../../../util/string';
@@ -8,18 +9,18 @@ import { findVersion } from './util';
 export function bumpPackageVersion(
   content: string,
   currentValue: string,
-  bumpVersion: ReleaseType
+  bumpVersion: ReleaseType,
 ): BumpPackageVersionResult {
   logger.debug(
     { bumpVersion, currentValue },
-    'Checking if we should bump project version'
+    'Checking if we should bump project version',
   );
   let bumpedContent = content;
 
   if (!semver.valid(currentValue)) {
     logger.warn(
       { currentValue },
-      'Unable to bump project version, not a valid semver'
+      'Unable to bump project version, not a valid semver',
     );
     return { bumpedContent };
   }
@@ -29,7 +30,7 @@ export function bumpPackageVersion(
     const versionNode = findVersion(project);
     if (!versionNode) {
       logger.warn(
-        "Couldn't find Version or VersionPrefix in any PropertyGroup"
+        "Couldn't find Version or VersionPrefix in any PropertyGroup",
       );
       return { bumpedContent };
     }
@@ -38,7 +39,7 @@ export function bumpPackageVersion(
     if (currentProjVersion !== currentValue) {
       logger.warn(
         { currentValue, currentProjVersion },
-        "currentValue passed to bumpPackageVersion() doesn't match value found"
+        "currentValue passed to bumpPackageVersion() doesn't match value found",
       );
       return { bumpedContent };
     }
@@ -46,7 +47,7 @@ export function bumpPackageVersion(
     const startTagPosition = versionNode.startTagPosition;
     const versionPosition = content.indexOf(
       currentProjVersion,
-      startTagPosition
+      startTagPosition,
     );
 
     const newProjVersion = semver.inc(currentValue, bumpVersion);
@@ -59,16 +60,16 @@ export function bumpPackageVersion(
       content,
       versionPosition,
       currentValue,
-      newProjVersion
+      newProjVersion,
     );
-  } catch (err) {
+  } catch {
     logger.warn(
       {
         content,
         currentValue,
         bumpVersion,
       },
-      'Failed to bumpVersion'
+      'Failed to bumpVersion',
     );
   }
   return { bumpedContent };

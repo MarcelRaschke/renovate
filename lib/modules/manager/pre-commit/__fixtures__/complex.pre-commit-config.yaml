@@ -13,16 +13,33 @@ repos:
     rev: 19.3b0
     hooks:
       - id: black
+        language: python
+        additional_dependencies:
+          - "request==1.1.1"
+          - "" # broken pypi package
   - repo: https://gitlab.com/psf/black
     # should also detect gitlab
     rev: 19.3b0
     hooks:
       - id: black
+        # missing language, not extracted
+        additional_dependencies:
+          - "urllib==24.9.0"
   - repo: http://gitlab.com/psf/black
     # should also detect http
     rev: 19.3b0
     hooks:
       - id: black
+  - repo: https://gitlab.mycompany.com/my/dep
+    # should also detect custom gitlab registry
+    rev: v42.0
+    hooks:
+      - id: custom-hook
+  - repo: https://gitlab.mycompany.com/my/dep
+    # should also detect http for custom gitlab registry
+    rev: v42.0
+    hooks:
+      - id: custom-hook
   - repo: https://github.com/prettier/pre-commit
     # should accept different order of keys
     hooks:
@@ -38,3 +55,7 @@ repos:
   - repo: some_invalid_url
     # case with invlalid url.
     rev: v1.0.0
+
+  # pre-commit meta hooks
+  - repo: meta
+    hooks: []

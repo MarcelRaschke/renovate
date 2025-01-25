@@ -2,12 +2,12 @@
 import { GlobalConfig } from '../../config/global';
 import type { RenovateConfig } from '../../config/types';
 import { logger } from '../../logger';
-import { Pr, platform } from '../../modules/platform';
-import { regEx } from '../../util/regex';
+import type { Pr } from '../../modules/platform';
+import { platform } from '../../modules/platform';
 
 export function raiseConfigWarningIssue(
   config: RenovateConfig,
-  error: Error
+  error: Error,
 ): Promise<void> {
   logger.debug('raiseConfigWarningIssue()');
   const title = `Action Required: Fix Renovate Configuration`;
@@ -18,7 +18,7 @@ export function raiseConfigWarningIssue(
 
 export function raiseCredentialsWarningIssue(
   config: RenovateConfig,
-  error: Error
+  error: Error,
 ): Promise<void> {
   logger.debug('raiseCredentialsWarningIssue()');
   const title = `Action Required: Add missing credentials`;
@@ -32,8 +32,14 @@ async function raiseWarningIssue(
   notificationName: string,
   title: string,
   initialBody: string,
-  error: Error
+  error: Error,
 ): Promise<void> {
+  if (config.mode === 'silent') {
+    logger.debug(
+      `Config warning issues are not created, updated or closed when mode=silent`,
+    );
+    return;
+  }
   let body = initialBody;
   if (error.validationSource) {
     body += `Location: \`${error.validationSource}\`\n`;
@@ -42,15 +48,12 @@ async function raiseWarningIssue(
     body += `Error type: ${error.validationError}\n`;
   }
   if (error.validationMessage) {
-    body += `Message: \`${error.validationMessage.replace(
-      regEx(/`/g),
-      "'"
-    )}\`\n`;
+    body += `Message: ${error.validationMessage}\n`;
   }
 
   const pr = await platform.getBranchPr(
     config.onboardingBranch!,
-    config.baseBranch
+    config.baseBranch,
   );
   if (pr?.state === 'open') {
     await handleOnboardingPr(pr, body);
@@ -60,7 +63,7 @@ async function raiseWarningIssue(
   if (GlobalConfig.get('dryRun')) {
     logger.info(
       { configError: error },
-      'DRY-RUN: Would ensure configuration error issue'
+      'DRY-RUN: Would ensure configuration error issue',
     );
     return;
   }
@@ -68,7 +71,7 @@ async function raiseWarningIssue(
   if (config.suppressNotifications?.includes(notificationName)) {
     logger.info(
       { notificationName },
-      'Configuration failure, issues will be suppressed'
+      'Configuration failure, issues will be suppressed',
     );
     return;
   }

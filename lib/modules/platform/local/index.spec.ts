@@ -33,10 +33,6 @@ describe('modules/platform/local/index', () => {
   });
 
   describe('dummy functions', () => {
-    it('getRepoForceRebase', async () => {
-      expect(await platform.getRepoForceRebase()).toBe(false);
-    });
-
     it('findIssue', async () => {
       expect(await platform.findIssue()).toBeNull();
     });
@@ -67,6 +63,10 @@ describe('modules/platform/local/index', () => {
 
     it('massageMarkdown', () => {
       expect(platform.massageMarkdown('foo')).toBe('foo');
+    });
+
+    it('maxBodyLength', () => {
+      expect(platform.maxBodyLength()).toBe(Infinity);
     });
 
     it('updatePr', async () => {

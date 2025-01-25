@@ -30,10 +30,6 @@ export function initRepo(): Promise<RepoResult> {
   });
 }
 
-export function getRepoForceRebase(): Promise<boolean> {
-  return Promise.resolve(false);
-}
-
 export function findIssue(): Promise<null> {
   return Promise.resolve(null);
 }
@@ -64,6 +60,13 @@ export function ensureIssue(): Promise<null> {
 
 export function massageMarkdown(input: string): string {
   return input;
+}
+
+/**
+ * Unsed, no Dashboard
+ */
+export function maxBodyLength(): number {
+  return Infinity;
 }
 
 export function updatePr(): Promise<void> {

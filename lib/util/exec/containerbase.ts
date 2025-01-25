@@ -2,7 +2,7 @@ import is from '@sindresorhus/is';
 import { quote } from 'shlex';
 import { GlobalConfig } from '../../config/global';
 import { logger } from '../../logger';
-import { getPkgReleases } from '../../modules/datasource';
+import type { ReleaseResult } from '../../modules/datasource';
 import * as allVersioning from '../../modules/versioning';
 import { id as composerVersioningId } from '../../modules/versioning/composer';
 import { id as gradleVersioningId } from '../../modules/versioning/gradle';
@@ -17,6 +17,12 @@ import { id as semverCoercedVersioningId } from '../../modules/versioning/semver
 import type { Opt, ToolConfig, ToolConstraint } from './types';
 
 const allToolConfig: Record<string, ToolConfig> = {
+  bun: {
+    datasource: 'github-releases',
+    packageName: 'oven-sh/bun',
+    extractVersion: '^bun-v(?<version>.*)$',
+    versioning: npmVersioningId,
+  },
   bundler: {
     datasource: 'rubygems',
     packageName: 'bundler',
@@ -31,6 +37,11 @@ const allToolConfig: Record<string, ToolConfig> = {
     datasource: 'github-releases',
     packageName: 'composer/composer',
     versioning: composerVersioningId,
+  },
+  copier: {
+    datasource: 'pypi',
+    packageName: 'copier',
+    versioning: pep440VersioningId,
   },
   corepack: {
     datasource: 'npm',
@@ -55,6 +66,11 @@ const allToolConfig: Record<string, ToolConfig> = {
   flux: {
     datasource: 'github-releases',
     packageName: 'fluxcd/flux2',
+    versioning: semverVersioningId,
+  },
+  gleam: {
+    datasource: 'github-releases',
+    packageName: 'gleam-lang/gleam',
     versioning: semverVersioningId,
   },
   golang: {
@@ -103,11 +119,6 @@ const allToolConfig: Record<string, ToolConfig> = {
     packageName: 'kubernetes-sigs/kustomize',
     extractVersion: '^kustomize/v(?<version>.*)$',
     versioning: semverVersioningId,
-  },
-  lerna: {
-    datasource: 'npm',
-    packageName: 'lerna',
-    versioning: npmVersioningId,
   },
   maven: {
     datasource: 'maven',
@@ -175,6 +186,11 @@ const allToolConfig: Record<string, ToolConfig> = {
     packageName: 'rust',
     versioning: semverVersioningId,
   },
+  uv: {
+    datasource: 'pypi',
+    packageName: 'uv',
+    versioning: pep440VersioningId,
+  },
   yarn: {
     datasource: 'npm',
     packageName: 'yarn',
@@ -188,14 +204,32 @@ const allToolConfig: Record<string, ToolConfig> = {
   dart: {
     datasource: 'dart-version',
     packageName: 'dart',
-    versioning: semverVersioningId,
+    versioning: npmVersioningId,
   },
   flutter: {
     datasource: 'flutter-version',
     packageName: 'flutter',
+    versioning: npmVersioningId,
+  },
+  vendir: {
+    datasource: 'github-releases',
+    packageName: 'carvel-dev/vendir',
     versioning: semverVersioningId,
   },
 };
+
+let _getPkgReleases: Promise<typeof import('../../modules/datasource')> | null =
+  null;
+
+async function getPkgReleases(
+  toolConfig: ToolConfig,
+): Promise<ReleaseResult | null> {
+  if (_getPkgReleases === null) {
+    _getPkgReleases = import('../../modules/datasource');
+  }
+  const { getPkgReleases } = await _getPkgReleases;
+  return getPkgReleases(toolConfig);
+}
 
 export function supportsDynamicInstall(toolName: string): boolean {
   return !!allToolConfig[toolName];
@@ -206,7 +240,7 @@ export function isContainerbase(): boolean {
 }
 
 export function isDynamicInstall(
-  toolConstraints?: Opt<ToolConstraint[]>
+  toolConstraints?: Opt<ToolConstraint[]>,
 ): boolean {
   if (GlobalConfig.get('binarySource') !== 'install') {
     return false;
@@ -218,21 +252,21 @@ export function isDynamicInstall(
   return (
     !toolConstraints ||
     toolConstraints.every((toolConstraint) =>
-      supportsDynamicInstall(toolConstraint.toolName)
+      supportsDynamicInstall(toolConstraint.toolName),
     )
   );
 }
 
 function isStable(
   version: string,
-  versioning: allVersioning.VersioningApi,
-  latest?: string
+  versioningApi: allVersioning.VersioningApi,
+  latest?: string,
 ): boolean {
-  if (!versioning.isStable(version)) {
+  if (!versioningApi.isStable(version)) {
     return false;
   }
   if (is.string(latest)) {
-    if (versioning.isGreaterThan(version, latest)) {
+    if (versioningApi.isGreaterThan(version, latest)) {
       return false;
     }
   }
@@ -240,7 +274,7 @@ function isStable(
 }
 
 export async function resolveConstraint(
-  toolConstraint: ToolConstraint
+  toolConstraint: ToolConstraint,
 ): Promise<string> {
   const { toolName } = toolConstraint;
   const toolConfig = allToolConfig[toolName];
@@ -258,7 +292,7 @@ export async function resolveConstraint(
     } else {
       logger.warn(
         { toolName, constraint, versioning: toolConfig.versioning },
-        'Invalid tool constraint'
+        'Invalid tool constraint',
       );
       constraint = undefined;
     }
@@ -273,7 +307,7 @@ export async function resolveConstraint(
   }
 
   const matchingReleases = releases.filter(
-    (r) => !constraint || versioning.matches(r.version, constraint)
+    (r) => !constraint || versioning.matches(r.version, constraint),
   );
 
   const stableMatchingVersion = matchingReleases
@@ -282,7 +316,7 @@ export async function resolveConstraint(
   if (stableMatchingVersion) {
     logger.debug(
       { toolName, constraint, resolvedVersion: stableMatchingVersion },
-      'Resolved stable matching version'
+      'Resolved stable matching version',
     );
     return stableMatchingVersion;
   }
@@ -291,7 +325,7 @@ export async function resolveConstraint(
   if (unstableMatchingVersion) {
     logger.debug(
       { toolName, constraint, resolvedVersion: unstableMatchingVersion },
-      'Resolved unstable matching version'
+      'Resolved unstable matching version',
     );
     return unstableMatchingVersion;
   }
@@ -302,20 +336,20 @@ export async function resolveConstraint(
   if (stableVersion) {
     logger.warn(
       { toolName, constraint, stableVersion },
-      'No matching tool versions found for constraint - using latest stable version'
+      'No matching tool versions found for constraint - using latest stable version',
     );
   }
 
   const highestVersion = releases.pop()!.version;
   logger.warn(
     { toolName, constraint, highestVersion },
-    'No matching or stable tool versions found - using an unstable version'
+    'No matching or stable tool versions found - using an unstable version',
   );
   return highestVersion;
 }
 
 export async function generateInstallCommands(
-  toolConstraints: Opt<ToolConstraint[]>
+  toolConstraints: Opt<ToolConstraint[]>,
 ): Promise<string[]> {
   const installCommands: string[] = [];
   if (toolConstraints?.length) {

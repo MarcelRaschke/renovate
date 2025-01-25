@@ -1,3 +1,5 @@
+import type { Timestamp } from '../../../util/timestamp';
+
 export interface JenkinsPluginInfo {
   name: string;
   scm?: string;
@@ -7,6 +9,9 @@ export interface JenkinsPluginVersion {
   version: string;
   buildDate?: string;
   url?: string;
+  requiredCore?: string;
+
+  releaseTimestamp?: Timestamp;
 }
 
 export interface JenkinsPluginsInfoResponse {

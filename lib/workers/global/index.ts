@@ -16,10 +16,13 @@ import type {
 import { CONFIG_PRESETS_INVALID } from '../../constants/error-messages';
 import { pkg } from '../../expose.cjs';
 import { instrument } from '../../instrumentation';
-import { getProblems, logger, setMeta } from '../../logger';
+import { exportStats, finalizeReport } from '../../instrumentation/reporting';
+import { getProblems, logLevel, logger, setMeta } from '../../logger';
+import { setGlobalLogLevelRemaps } from '../../logger/remap';
 import * as hostRules from '../../util/host-rules';
 import * as queue from '../../util/http/queue';
 import * as throttle from '../../util/http/throttle';
+import { regexEngineStatus } from '../../util/regex';
 import { addSecretForSanitizing } from '../../util/sanitize';
 import * as repositoryWorker from '../repository';
 import { autodiscoverRepositories } from './autodiscover';
@@ -29,12 +32,16 @@ import { isLimitReached } from './limits';
 
 export async function getRepositoryConfig(
   globalConfig: RenovateConfig,
-  repository: RenovateRepository
+  repository: RenovateRepository,
 ): Promise<RenovateConfig> {
   const repoConfig = configParser.mergeChildConfig(
     globalConfig,
-    is.string(repository) ? { repository } : repository
+    is.string(repository) ? { repository } : repository,
   );
+  const repoParts = repoConfig.repository.split('/');
+  repoParts.pop();
+  repoConfig.parentOrg = repoParts.join('/');
+  repoConfig.topLevelOrg = repoParts.shift();
   // TODO: types (#22198)
   const platform = GlobalConfig.get('platform')!;
   repoConfig.localDir =
@@ -42,7 +49,7 @@ export async function getRepositoryConfig(
       ? process.cwd()
       : upath.join(
           repoConfig.baseDir,
-          `./repos/${platform}/${repoConfig.repository}`
+          `./repos/${platform}/${repoConfig.repository}`,
         );
   await fs.ensureDir(repoConfig.localDir);
   delete repoConfig.baseDir;
@@ -64,24 +71,15 @@ function haveReachedLimits(): boolean {
 /* istanbul ignore next */
 function checkEnv(): void {
   const range = pkg.engines!.node!;
-  const rangeNext = pkg['engines-next']?.node;
   if (process.release?.name !== 'node' || !process.versions?.node) {
-    logger[process.env.RENOVATE_X_IGNORE_NODE_WARN ? 'info' : 'warn'](
+    logger.warn(
       { release: process.release, versions: process.versions },
-      'Unknown node environment detected.'
+      'Unknown node environment detected.',
     );
   } else if (!semver.satisfies(process.versions?.node, range)) {
     logger.error(
       { versions: process.versions, range },
-      'Unsupported node environment detected. Please update your node version.'
-    );
-  } else if (
-    rangeNext &&
-    !semver.satisfies(process.versions?.node, rangeNext)
-  ) {
-    logger[process.env.RENOVATE_X_IGNORE_NODE_WARN ? 'info' : 'warn'](
-      { versions: process.versions },
-      `Please upgrade the version of Node.js used to run Renovate to satisfy "${rangeNext}". Support for your current version will be removed in Renovate's next major release.`
+      'Unsupported node environment detected. Please update your node version.',
     );
   }
 }
@@ -97,11 +95,12 @@ export async function validatePresets(config: AllConfig): Promise<void> {
 }
 
 export async function resolveGlobalExtends(
-  globalExtends: string[]
+  globalExtends: string[],
+  ignorePresets?: string[],
 ): Promise<AllConfig> {
   try {
     // Make a "fake" config to pass to resolveConfigPresets and resolve globalPresets
-    const config = { extends: globalExtends };
+    const config = { extends: globalExtends, ignorePresets };
     const resolvedConfig = await resolveConfigPresets(config);
     return resolvedConfig;
   } catch (err) {
@@ -111,6 +110,18 @@ export async function resolveGlobalExtends(
 }
 
 export async function start(): Promise<number> {
+  // istanbul ignore next
+  if (regexEngineStatus.type === 'available') {
+    logger.debug('Using RE2 regex engine');
+  } else if (regexEngineStatus.type === 'unavailable') {
+    logger.warn(
+      { err: regexEngineStatus.err },
+      'RE2 not usable, falling back to RegExp',
+    );
+  } else if (regexEngineStatus.type === 'ignored') {
+    logger.debug('RE2 regex engine is ignored via RENOVATE_X_IGNORE_RE2');
+  }
+
   let config: AllConfig;
   try {
     if (is.nonEmptyStringAndNotWhitespace(process.env.AWS_SECRET_ACCESS_KEY)) {
@@ -123,23 +134,34 @@ export async function start(): Promise<number> {
     await instrument('config', async () => {
       // read global config from file, env and cli args
       config = await getGlobalConfig();
-      if (config?.globalExtends) {
+      if (is.nonEmptyArray(config?.globalExtends)) {
         // resolve global presets immediately
         config = mergeChildConfig(
+          await resolveGlobalExtends(
+            config.globalExtends,
+            config.ignorePresets,
+          ),
           config,
-          await resolveGlobalExtends(config.globalExtends)
         );
       }
+
+      // Set allowedHeaders in case hostRules headers are configured in file config
+      GlobalConfig.set({
+        allowedHeaders: config.allowedHeaders,
+      });
       // initialize all submodules
       config = await globalInitialize(config);
 
-      // Set platform and endpoint in case local presets are used
+      // Set platform, endpoint and allowedHeaders in case local presets are used
       GlobalConfig.set({
+        allowedHeaders: config.allowedHeaders,
         platform: config.platform,
         endpoint: config.endpoint,
       });
 
       await validatePresets(config);
+
+      setGlobalLogLevelRemaps(config.logLevelRemap);
 
       checkEnv();
 
@@ -149,14 +171,14 @@ export async function start(): Promise<number> {
 
     // autodiscover repositories (needs to come after platform initialization)
     config = await instrument('discover', () =>
-      autodiscoverRepositories(config)
+      autodiscoverRepositories(config),
     );
 
     if (is.nonEmptyString(config.writeDiscoveredRepos)) {
       const content = JSON.stringify(config.repositories);
       await fs.writeFile(config.writeDiscoveredRepos, content);
       logger.info(
-        `Written discovered repositories to ${config.writeDiscoveredRepos}`
+        `Written discovered repositories to ${config.writeDiscoveredRepos}`,
       );
       return 0;
     }
@@ -191,14 +213,20 @@ export async function start(): Promise<number> {
                 ? repository
                 : repository.repository,
           },
-        }
+        },
       );
     }
+
+    finalizeReport();
+    await exportStats(config);
   } catch (err) /* istanbul ignore next */ {
     if (err.message.startsWith('Init: ')) {
-      logger.fatal(err.message.substring(6));
+      logger.fatal(
+        { errorMessage: err.message.substring(6) },
+        'Initialization error',
+      );
     } else {
-      logger.fatal({ err }, `Fatal error: ${String(err.message)}`);
+      logger.fatal({ err }, 'Unknown error');
     }
     if (!config!) {
       // return early if we can't parse config options
@@ -207,13 +235,17 @@ export async function start(): Promise<number> {
     }
   } finally {
     await globalFinalize(config!);
-    logger.debug(`Renovate exiting`);
+    if (logLevel() === 'info') {
+      logger.info(
+        `Renovate was run at log level "${logLevel()}". Set LOG_LEVEL=debug in environment variables to see extended debug logs.`,
+      );
+    }
   }
   const loggerErrors = getProblems().filter((p) => p.level >= ERROR);
   if (loggerErrors.length) {
     logger.info(
       { loggerErrors },
-      'Renovate is exiting with a non-zero code due to the following logged errors'
+      'Renovate is exiting with a non-zero code due to the following logged errors',
     );
     return 1;
   }

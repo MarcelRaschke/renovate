@@ -2,6 +2,8 @@ import { query as q } from 'good-enough-parser';
 import type { Ctx } from '../types';
 import {
   cleanupTempVars,
+  qArtifactId,
+  qGroupId,
   qStringValue,
   qStringValueAsSymbol,
   qValueMatcher,
@@ -9,14 +11,6 @@ import {
   storeVarToken,
 } from './common';
 import { handleLibraryDep, handlePlugin } from './handlers';
-
-const qGroupId = qValueMatcher.handler((ctx) =>
-  storeInTokenMap(ctx, 'groupId')
-);
-
-const qArtifactId = qValueMatcher.handler((ctx) =>
-  storeInTokenMap(ctx, 'artifactId')
-);
 
 const qVersionCatalogVersion = q
   .op<Ctx>('.')
@@ -34,7 +28,7 @@ const qVersionCatalogVersion = q
       startsWith: '(',
       endsWith: ')',
       search: q.begin<Ctx>().join(qValueMatcher).end(),
-    })
+    }),
   )
   .handler((ctx) => storeInTokenMap(ctx, 'version'));
 
@@ -79,7 +73,7 @@ const qVersionCatalogPlugins = q
       .handler((ctx) => storeInTokenMap(ctx, 'pluginName'))
       .end(),
   })
-  .opt(qVersionCatalogVersion)
+  .join(qVersionCatalogVersion)
   .handler(handlePlugin)
   .handler(cleanupTempVars);
 
@@ -113,5 +107,5 @@ const qVersionCatalogAliasDependencies = q
 export const qVersionCatalogs = q.alt(
   qVersionCatalogDependencies,
   qVersionCatalogPlugins,
-  qVersionCatalogAliasDependencies
+  qVersionCatalogAliasDependencies,
 );

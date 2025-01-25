@@ -14,12 +14,11 @@ import * as p from '../promises';
 import { range } from '../range';
 import { regEx } from '../regex';
 import { joinUrlParts, parseLinkHeader, resolveBaseUrl } from '../url';
-import { findMatchingRules } from './host-rules';
+import { findMatchingRule } from './host-rules';
 import type { GotLegacyError } from './legacy';
 import type {
   GraphqlOptions,
   HttpOptions,
-  HttpRequestOptions,
   HttpResponse,
   InternalHttpOptions,
 } from './types';
@@ -58,7 +57,7 @@ export type GithubGraphqlResponse<T = unknown> =
 function handleGotError(
   err: GotLegacyError,
   url: string | URL,
-  opts: GithubHttpOptions
+  opts: GithubHttpOptions,
 ): Error {
   const path = url.toString();
   let message = err.message || '';
@@ -112,7 +111,7 @@ function handleGotError(
   ) {
     logger.debug(
       { err },
-      'GitHub failure: Resource not accessible by integration'
+      'GitHub failure: Resource not accessible by integration',
     );
     return new Error(PLATFORM_INTEGRATION_UNAUTHORIZED);
   }
@@ -123,7 +122,7 @@ function handleGotError(
         token: maskToken(opts.token),
         err,
       },
-      'GitHub failure: Bad credentials'
+      'GitHub failure: Bad credentials',
     );
     if (rateLimit === '60') {
       return new ExternalHostError(err, 'github');
@@ -135,12 +134,14 @@ function handleGotError(
       message.includes('Review cannot be requested from pull request author')
     ) {
       return err;
+    } else if (err.body?.errors?.find((e: any) => e.field === 'milestone')) {
+      return err;
     } else if (err.body?.errors?.find((e: any) => e.code === 'invalid')) {
       logger.debug({ err }, 'Received invalid response - aborting');
       return new Error(REPOSITORY_CHANGED);
     } else if (
       err.body?.errors?.find((e: any) =>
-        e.message?.startsWith('A pull request already exists')
+        e.message?.startsWith('A pull request already exists'),
       )
     ) {
       return err;
@@ -190,7 +191,7 @@ export type GraphqlPageCache = Record<string, GraphqlPageCacheItem>;
 
 function getGraphqlPageSize(
   fieldName: string,
-  defaultPageSize = MAX_GRAPHQL_PAGE_SIZE
+  defaultPageSize = MAX_GRAPHQL_PAGE_SIZE,
 ): number {
   const cache = getCache();
   const graphqlPageCache = cache?.platform?.github
@@ -200,7 +201,7 @@ function getGraphqlPageSize(
   if (graphqlPageCache && cachedRecord) {
     logger.debug(
       { fieldName, ...cachedRecord },
-      'GraphQL page size: found cached value'
+      'GraphQL page size: found cached value',
     );
 
     const oldPageSize = cachedRecord.pageSize;
@@ -211,11 +212,11 @@ function getGraphqlPageSize(
     if (now > expiry) {
       const newPageSize = Math.min(oldPageSize * 2, MAX_GRAPHQL_PAGE_SIZE);
       if (newPageSize < MAX_GRAPHQL_PAGE_SIZE) {
-        const timestamp = now.toISO()!;
+        const timestamp = now.toISO();
 
         logger.debug(
           { fieldName, oldPageSize, newPageSize, timestamp },
-          'GraphQL page size: expanding'
+          'GraphQL page size: expanding',
         );
 
         cachedRecord.pageLastResizedAt = timestamp;
@@ -223,7 +224,7 @@ function getGraphqlPageSize(
       } else {
         logger.debug(
           { fieldName, oldPageSize, newPageSize },
-          'GraphQL page size: expanded to default page size'
+          'GraphQL page size: expanded to default page size',
         );
 
         delete graphqlPageCache[fieldName];
@@ -242,10 +243,10 @@ function setGraphqlPageSize(fieldName: string, newPageSize: number): void {
   const oldPageSize = getGraphqlPageSize(fieldName);
   if (newPageSize !== oldPageSize) {
     const now = DateTime.local();
-    const pageLastResizedAt = now.toISO()!;
+    const pageLastResizedAt = now.toISO();
     logger.debug(
       { fieldName, oldPageSize, newPageSize, timestamp: pageLastResizedAt },
-      'GraphQL page size: shrinking'
+      'GraphQL page size: shrinking',
     );
     const cache = getCache();
     cache.platform ??= {};
@@ -272,10 +273,10 @@ export class GithubHttp extends Http<GithubHttpOptions> {
 
   protected override async request<T>(
     url: string | URL,
-    options?: InternalHttpOptions & GithubHttpOptions & HttpRequestOptions<T>,
-    okToRetry = true
+    options?: InternalHttpOptions & GithubHttpOptions,
+    okToRetry = true,
   ): Promise<HttpResponse<T>> {
-    const opts: GithubHttpOptions = {
+    const opts: InternalHttpOptions & GithubHttpOptions = {
       baseUrl,
       ...options,
       throwHttpErrors: true,
@@ -291,14 +292,22 @@ export class GithubHttp extends Http<GithubHttpOptions> {
         authUrl.pathname = joinUrlParts(
           authUrl.pathname.startsWith('/api/v3') ? '/api/v3' : '',
           'repos',
-          `${opts.repository}`
+          `${opts.repository}`,
         );
       }
 
-      const { token } = findMatchingRules(
-        { hostType: this.hostType },
-        authUrl.toString()
-      );
+      let readOnly = opts.readOnly;
+      const { method = 'get' } = opts;
+      if (
+        readOnly === undefined &&
+        ['get', 'head'].includes(method.toLowerCase())
+      ) {
+        readOnly = true;
+      }
+      const { token } = findMatchingRule(authUrl.toString(), {
+        hostType: this.hostType,
+        readOnly,
+      });
       opts.token = token;
     }
 
@@ -339,10 +348,10 @@ export class GithubHttp extends Http<GithubHttpOptions> {
               nextUrl.searchParams.set('page', String(pageNumber));
               return this.request<T>(
                 nextUrl,
-                { ...opts, paginate: false },
-                okToRetry
+                { ...opts, paginate: false, cacheProvider: undefined },
+                okToRetry,
               );
-            }
+            },
           );
           const pages = await p.all(queue);
           if (opts.paginationField && is.plainObject(result.body)) {
@@ -374,7 +383,7 @@ export class GithubHttp extends Http<GithubHttpOptions> {
 
   public async requestGraphql<T = unknown>(
     query: string,
-    options: GraphqlOptions = {}
+    options: GraphqlOptions = {},
   ): Promise<GithubGraphqlResponse<T> | null> {
     const path = 'graphql';
 
@@ -393,6 +402,7 @@ export class GithubHttp extends Http<GithubHttpOptions> {
       baseUrl: baseUrl.replace('/v3/', '/'), // GHE uses unversioned graphql path
       body,
       headers: { accept: options?.acceptHeader },
+      readOnly: options.readOnly,
     };
     if (options.token) {
       opts.token = options.token;
@@ -415,7 +425,7 @@ export class GithubHttp extends Http<GithubHttpOptions> {
   async queryRepoField<T = Record<string, unknown>>(
     query: string,
     fieldName: string,
-    options: GraphqlOptions = {}
+    options: GraphqlOptions = {},
   ): Promise<T[]> {
     const result: T[] = [];
 
@@ -424,7 +434,7 @@ export class GithubHttp extends Http<GithubHttpOptions> {
     let optimalCount: null | number = null;
     let count = getGraphqlPageSize(
       fieldName,
-      options.count ?? MAX_GRAPHQL_PAGE_SIZE
+      options.count ?? MAX_GRAPHQL_PAGE_SIZE,
     );
     let limit = options.limit ?? 1000;
     let cursor: string | null = null;
@@ -481,6 +491,43 @@ export class GithubHttp extends Http<GithubHttpOptions> {
       setGraphqlPageSize(fieldName, optimalCount);
     }
 
+    return result;
+  }
+
+  /**
+   * Get the raw text file from a URL.
+   * Only use this method to fetch text files.
+   *
+   * @param url Full API URL, contents path or path inside the repository to the file
+   * @param options
+   *
+   * @example url = 'https://api.github.com/repos/renovatebot/renovate/contents/package.json'
+   * @example url = 'renovatebot/renovate/contents/package.json'
+   * @example url = 'package.json' & options.repository = 'renovatebot/renovate'
+   */
+  public async getRawTextFile(
+    url: string,
+    options: InternalHttpOptions & GithubHttpOptions = {},
+  ): Promise<HttpResponse> {
+    const newOptions: InternalHttpOptions & GithubHttpOptions = {
+      ...options,
+      headers: {
+        accept: 'application/vnd.github.raw+json',
+      },
+    };
+
+    let newURL = url;
+    const httpRegex = regEx(/^https?:\/\//);
+    if (options.repository && !httpRegex.test(options.repository)) {
+      newURL = joinUrlParts(options.repository, 'contents', url);
+    }
+
+    const result = await this.get(newURL, newOptions);
+    if (!is.string(result.body)) {
+      throw new Error(
+        `Expected raw text file but received ${typeof result.body}`,
+      );
+    }
     return result;
   }
 }

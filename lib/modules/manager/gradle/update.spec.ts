@@ -12,7 +12,7 @@ describe('modules/manager/gradle/update', () => {
             fileReplacePosition: 3,
           },
         },
-      })
+      }),
     ).toBe('###1.2.4###');
   });
 
@@ -23,12 +23,12 @@ describe('modules/manager/gradle/update', () => {
         upgrade: {
           currentValue: '1.2.3',
           newValue: '1.2.5',
-          groupName: 'group',
+          sharedVariableName: 'group',
           managerData: {
             fileReplacePosition: 3,
           },
         },
-      })
+      }),
     ).toBe('###1.2.5###');
   });
 
@@ -44,7 +44,7 @@ describe('modules/manager/gradle/update', () => {
             fileReplacePosition: 3,
           },
         },
-      })
+      }),
     ).toBe(fileContent);
   });
 
@@ -59,7 +59,7 @@ describe('modules/manager/gradle/update', () => {
             fileReplacePosition: 3,
           },
         },
-      })
+      }),
     ).toBeNull();
 
     expect(
@@ -72,7 +72,7 @@ describe('modules/manager/gradle/update', () => {
             fileReplacePosition: 3,
           },
         },
-      })
+      }),
     ).toBeNull();
   });
 

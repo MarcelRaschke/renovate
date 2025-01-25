@@ -22,15 +22,13 @@ export async function updateArtifacts({
     return null;
   }
 
-  let cmd = `nix \
-    --extra-experimental-features nix-command \
-    --extra-experimental-features flakes `;
+  let cmd = `nix --extra-experimental-features 'nix-command flakes' `;
 
   const token = findGithubToken(
     hostRules.find({
       hostType: 'github',
       url: 'https://api.github.com/',
-    })
+    }),
   );
 
   if (token) {
@@ -56,6 +54,7 @@ export async function updateArtifacts({
       },
     ],
     docker: {},
+    userConfiguredEnv: config.env,
   };
 
   try {

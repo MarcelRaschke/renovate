@@ -6,40 +6,55 @@ import { regEx } from '../../../../util/regex';
 export function getCurrentVersion(
   currentValue: string,
   lockedVersion: string,
-  versioning: VersioningApi,
+  versioningApi: VersioningApi,
   rangeStrategy: string,
   latestVersion: string,
-  allVersions: string[]
+  allVersions: string[],
 ): string | null {
   // istanbul ignore if
   if (!is.string(currentValue)) {
     return null;
   }
-  if (versioning.isVersion(currentValue)) {
+  logger.trace(`currentValue ${currentValue} is range`);
+  if (allVersions.includes(currentValue)) {
     return currentValue;
   }
-  if (versioning.isSingleVersion(currentValue)) {
-    return currentValue.replace(regEx(/=/g), '').trim();
-  }
-  logger.trace(`currentValue ${currentValue} is range`);
   let useVersions = allVersions.filter((v) =>
-    versioning.matches(v, currentValue)
+    versioningApi.matches(v, currentValue),
   );
-  if (latestVersion && versioning.matches(latestVersion, currentValue)) {
+  if (useVersions.length === 1) {
+    return useVersions[0];
+  }
+  if (latestVersion && versioningApi.matches(latestVersion, currentValue)) {
     useVersions = useVersions.filter(
-      (v) => !versioning.isGreaterThan(v, latestVersion)
+      (v) => !versioningApi.isGreaterThan(v, latestVersion),
     );
   }
   if (rangeStrategy === 'pin') {
     return (
       lockedVersion ||
-      versioning.getSatisfyingVersion(useVersions, currentValue)
+      versioningApi.getSatisfyingVersion(useVersions, currentValue)
     );
   }
   if (rangeStrategy === 'bump') {
     // Use the lowest version in the current range
-    return versioning.minSatisfyingVersion(useVersions, currentValue);
+    return versioningApi.minSatisfyingVersion(useVersions, currentValue);
   }
   // Use the highest version in the current range
-  return versioning.getSatisfyingVersion(useVersions, currentValue);
+  const satisfyingVersion = versioningApi.getSatisfyingVersion(
+    useVersions,
+    currentValue,
+  );
+  if (satisfyingVersion) {
+    return satisfyingVersion;
+  }
+
+  if (versioningApi.isVersion(currentValue)) {
+    return currentValue;
+  }
+  if (versioningApi.isSingleVersion(currentValue)) {
+    return currentValue.replace(regEx(/=/g), '').trim();
+  }
+
+  return null;
 }

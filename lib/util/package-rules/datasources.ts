@@ -1,11 +1,12 @@
 import is from '@sindresorhus/is';
 import type { PackageRule, PackageRuleInputConfig } from '../../config/types';
+import { matchRegexOrGlobList } from '../string-match';
 import { Matcher } from './base';
 
 export class DatasourcesMatcher extends Matcher {
   override matches(
     { datasource }: PackageRuleInputConfig,
-    { matchDatasources }: PackageRule
+    { matchDatasources }: PackageRule,
   ): boolean | null {
     if (is.undefined(matchDatasources)) {
       return null;
@@ -13,6 +14,6 @@ export class DatasourcesMatcher extends Matcher {
     if (is.undefined(datasource)) {
       return false;
     }
-    return matchDatasources.includes(datasource);
+    return matchRegexOrGlobList(datasource, matchDatasources);
   }
 }

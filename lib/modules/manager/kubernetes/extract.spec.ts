@@ -67,7 +67,7 @@ describe('modules/manager/kubernetes/extract', () => {
       const res = extractPackageFile(
         kubernetesArraySyntaxFile,
         'file.yaml',
-        {}
+        {},
       );
       expect(res?.deps).toStrictEqual([
         {
@@ -160,6 +160,27 @@ kind: ConfigMap
             datasource: 'docker',
             depName: 'my-quay-mirror.registry.com/node',
             replaceString: 'quay.io/node:0.0.1',
+          },
+        ],
+      });
+    });
+
+    it('extracts from complex templates', () => {
+      const res = extractPackageFile(
+        Fixtures.get('complex.yaml'),
+        'complex.yaml',
+        {},
+      );
+      expect(res).toEqual({
+        deps: [
+          {
+            autoReplaceStringTemplate:
+              '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+            currentDigest: undefined,
+            currentValue: undefined,
+            datasource: 'docker',
+            depName: 'busybox',
+            replaceString: 'busybox',
           },
         ],
       });

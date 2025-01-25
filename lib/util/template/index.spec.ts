@@ -22,7 +22,7 @@ describe('util/template/index', () => {
   it('has valid exposed config options', () => {
     const allOptions = getOptions().map((option) => option.name);
     const missingOptions = template.exposedConfigOptions.filter(
-      (option) => !allOptions.includes(option)
+      (option) => !allOptions.includes(option),
     );
     expect(missingOptions).toEqual([]);
   });
@@ -96,6 +96,58 @@ describe('util/template/index', () => {
     expect(output).toMatchSnapshot();
   });
 
+  it('to JSON', () => {
+    const userTemplate = '{{{ toJSON upgrades }}}';
+    const input = {
+      upgrades: [
+        {
+          depName: 'foo-lib',
+          currentVersion: '1.0.0',
+          newVersion: '1.0.1',
+        },
+      ],
+    };
+    const output = template.compile(userTemplate, input);
+    expect(JSON.parse(output)).toEqual(input.upgrades);
+  });
+
+  it('to JSON empty array', () => {
+    const userTemplate = '{{{ toJSON (toArray) }}}';
+    const output = template.compile(userTemplate, {});
+    expect(JSON.parse(output)).toEqual([]);
+  });
+
+  it('to JSON empty object', () => {
+    const userTemplate = '{{{ toJSON (toObject) }}}';
+    const output = template.compile(userTemplate, {});
+    expect(JSON.parse(output)).toEqual({});
+  });
+
+  it('to Object passing illegal number of elements', () => {
+    const userTemplate = "{{{ toJSON (toObject 'foo') }}}";
+    const outputFunc = () => template.compile(userTemplate, {});
+    expect(outputFunc).toThrow();
+  });
+
+  it('build complex json', () => {
+    const userTemplate =
+      "{{{ toJSON (toObject 'upgrades' upgrades 'array' (toArray platform isMajor 'foo')) }}}";
+    const input = {
+      platform: 'github',
+      isMajor: true,
+      upgrades: [
+        {
+          depName: 'foo-lib',
+        },
+      ],
+    };
+    const output = template.compile(userTemplate, input);
+    expect(JSON.parse(output)).toEqual({
+      upgrades: input.upgrades,
+      array: [input.platform, input.isMajor, 'foo'],
+    });
+  });
+
   it('lowercase', () => {
     const userTemplate = "{{{ lowercase 'FOO'}}}";
     const output = template.compile(userTemplate, undefined as never);
@@ -112,6 +164,31 @@ describe('util/template/index', () => {
     const userTemplate = 'CUSTOM_FOO is {{env.CUSTOM_FOO}}';
     const output = template.compile(userTemplate, {});
     expect(output).toBe('CUSTOM_FOO is foo');
+  });
+
+  it('and has access to prBodyDefinitions', () => {
+    const userTemplate =
+      'Issues: {{#each upgrades}}{{{prBodyDefinitions.Issue}}} {{/each}}';
+    const config = {
+      upgrades: [
+        {
+          prBodyDefinitions: {
+            Issue: '1234',
+          },
+        },
+      ],
+    };
+    const output = template.compile(userTemplate, config);
+    expect(output).toBe('Issues: 1234 ');
+  });
+
+  it('replace', () => {
+    const userTemplate =
+      "{{ replace '[a-z]+\\.github\\.com' 'ghc' depName }}{{ replace 'some' 'other' depType }}";
+    const output = template.compile(userTemplate, {
+      depName: 'some.github.com/dep',
+    });
+    expect(output).toBe('ghc/dep');
   });
 
   describe('proxyCompileInput', () => {
@@ -131,64 +208,48 @@ describe('util/template/index', () => {
     };
 
     it('accessing allowed fields', () => {
-      const p = template.proxyCompileInput(compileInput);
+      const warnVariables = new Set<string>();
+      const p = template.proxyCompileInput(compileInput, warnVariables);
 
       expect(p[allowedField]).toBe('allowed');
       expect(p[allowedArrayField]).toStrictEqual(['allowed']);
+      expect(warnVariables).toBeEmpty();
       expect(p[forbiddenField]).toBeUndefined();
+      expect(warnVariables).toEqual(new Set<string>([forbiddenField]));
     });
 
     it('supports object nesting', () => {
-      const proxy = template.proxyCompileInput({
-        [allowedField]: compileInput,
-      });
+      const warnVariables = new Set<string>();
+      const proxy = template.proxyCompileInput(
+        {
+          [allowedField]: compileInput,
+        },
+        warnVariables,
+      );
 
       const obj = proxy[allowedField] as TestCompileInput;
       expect(obj[allowedField]).toBe('allowed');
+      expect(warnVariables).toBeEmpty();
       expect(obj[forbiddenField]).toBeUndefined();
+      expect(warnVariables).toEqual(new Set<string>([forbiddenField]));
     });
 
     it('supports array nesting', () => {
-      const proxy = template.proxyCompileInput({
-        [allowedField]: [compileInput],
-      });
+      const warnVariables = new Set<string>();
+      const proxy = template.proxyCompileInput(
+        {
+          [allowedField]: [compileInput],
+        },
+        warnVariables,
+      );
 
       const arr = proxy[allowedField] as TestCompileInput[];
       const obj = arr[0];
       expect(obj[allowedField]).toBe('allowed');
       expect(obj[allowedArrayField]).toStrictEqual(['allowed']);
+      expect(warnVariables).toBeEmpty();
       expect(obj[forbiddenField]).toBeUndefined();
-    });
-  });
-
-  describe('containsTemplate', () => {
-    it('supports null', () => {
-      expect(template.containsTemplates(null, 'logJSON')).toBeFalse();
-    });
-
-    it('contains template', () => {
-      expect(
-        template.containsTemplates(
-          '{{#if logJSON}}{{logJSON}}{{/if}}',
-          'logJSON'
-        )
-      ).toBeTrue();
-      expect(
-        template.containsTemplates(
-          '{{#with logJSON.hasReleaseNotes as | hasNotes |}}{{hasNotes}}{{/if}}',
-          'logJSON'
-        )
-      ).toBeTrue();
-      expect(
-        template.containsTemplates(
-          '{{#if logJSON.hasReleaseNotes}}has notes{{/if}}',
-          'logJSON'
-        )
-      ).toBeTrue();
-    });
-
-    it('does not contain template', () => {
-      expect(template.containsTemplates('{{body}}', ['logJSON'])).toBeFalse();
+      expect(warnVariables).toEqual(new Set<string>([forbiddenField]));
     });
   });
 
@@ -196,7 +257,7 @@ describe('util/template/index', () => {
     it('encodes values', () => {
       const output = template.compile(
         '{{{encodeURIComponent "@fsouza/prettierd"}}}',
-        undefined as never
+        undefined as never,
       );
       expect(output).toBe('%40fsouza%2Fprettierd');
     });
@@ -204,9 +265,33 @@ describe('util/template/index', () => {
     it('decodes values', () => {
       const output = template.compile(
         '{{{decodeURIComponent "%40fsouza/prettierd"}}}',
-        undefined as never
+        undefined as never,
       );
       expect(output).toBe('@fsouza/prettierd');
+    });
+  });
+
+  describe('base64 encoding', () => {
+    it('encodes values', () => {
+      const output = template.compile(
+        '{{{encodeBase64 "@fsouza/prettierd"}}}',
+        undefined as never,
+      );
+      expect(output).toBe('QGZzb3V6YS9wcmV0dGllcmQ=');
+    });
+
+    it('handles null values gracefully', () => {
+      const output = template.compile('{{{encodeBase64 packageName}}}', {
+        packageName: null,
+      });
+      expect(output).toBe('');
+    });
+
+    it('handles undefined values gracefully', () => {
+      const output = template.compile('{{{encodeBase64 packageName}}}', {
+        packageName: undefined,
+      });
+      expect(output).toBe('');
     });
   });
 
@@ -217,7 +302,7 @@ describe('util/template/index', () => {
         {
           datasource: 'git-refs',
           packageName: 'renovatebot/renovate',
-        }
+        },
       );
       expect(output).toBe('https://github.com/renovatebot/renovate');
     });
@@ -228,7 +313,7 @@ describe('util/template/index', () => {
         {
           datasource: 'github-releases',
           packageName: 'renovatebot/renovate',
-        }
+        },
       );
       expect(output).toBe('renovatebot/renovate');
     });
@@ -238,9 +323,212 @@ describe('util/template/index', () => {
         '{{#if (equals newMajor "3")}}equals{{else}}not equals{{/if}}',
         {
           newMajor: 3,
-        }
+        },
       );
       expect(output).toBe('not equals');
+    });
+  });
+
+  describe('includes', () => {
+    it('includes is true', () => {
+      const output = template.compile(
+        '{{#if (includes labels "dependencies")}}production{{else}}notProduction{{/if}}',
+        {
+          labels: ['dependencies'],
+        },
+      );
+
+      expect(output).toBe('production');
+    });
+
+    it('includes is false', () => {
+      const output = template.compile(
+        '{{#if (includes labels "dependencies")}}production{{else}}notProduction{{/if}}',
+        {
+          labels: ['devDependencies'],
+        },
+      );
+
+      expect(output).toBe('notProduction');
+    });
+
+    it('includes with incorrect type first argument', () => {
+      const output = template.compile(
+        '{{#if (includes labels "dependencies")}}production{{else}}notProduction{{/if}}',
+        {
+          labels: 'devDependencies',
+        },
+      );
+
+      expect(output).toBe('notProduction');
+    });
+
+    it('includes with incorrect type second argument', () => {
+      const output = template.compile(
+        '{{#if (includes labels 555)}}production{{else}}notProduction{{/if}}',
+        {
+          labels: ['devDependencies'],
+        },
+      );
+
+      expect(output).toBe('notProduction');
+    });
+  });
+
+  describe('split', () => {
+    it('should return empty array on non string input', () => {
+      const output = template.compile("test {{ split labels '-' }}", {
+        labels: 123,
+      });
+      expect(output).toBe('test ');
+    });
+
+    it('should return empty array on missing parameter', () => {
+      const output = template.compile('test {{ split labels }}', {
+        labels: 'foo-bar',
+      });
+      expect(output).toBe('test ');
+    });
+
+    it('should return array on success', () => {
+      const output = template.compile("{{ split labels '-' }}", {
+        labels: 'foo-bar',
+      });
+      expect(output).toBe('foo,bar');
+    });
+
+    it('should return array element', () => {
+      const output = template.compile(
+        "{{ lookup (split packageName '-') 1 }}",
+        {
+          packageName: 'foo-bar-test',
+        },
+      );
+      expect(output).toBe('bar');
+    });
+  });
+
+  describe('lookupArray', () => {
+    it('performs lookup for every array element', () => {
+      const output = template.compile(
+        '{{#each (lookupArray upgrades "prBodyDefinitions")}} {{{Issue}}}{{/each}}',
+        {
+          upgrades: [
+            {
+              prBodyDefinitions: {
+                Issue: 'ABC-123',
+              },
+            },
+            {},
+            {
+              prBodyDefinitions: {
+                Issue: 'DEF-456',
+              },
+            },
+            null,
+            undefined,
+          ],
+        },
+      );
+
+      expect(output).toBe(' ABC-123 DEF-456');
+    });
+
+    it('handles null input array', () => {
+      const output = template.compile(
+        '{{#each (lookupArray testArray "prBodyDefinitions")}} {{{Issue}}}{{/each}}',
+        {
+          testArray: null,
+        },
+        false,
+      );
+
+      expect(output).toBe('');
+    });
+
+    it('handles empty string key', () => {
+      const output = template.compile(
+        '{{#each (lookupArray testArray "")}} {{{.}}}{{/each}}',
+        {
+          testArray: [
+            {
+              '': 'ABC-123',
+            },
+          ],
+        },
+        false,
+      );
+
+      expect(output).toBe(' ABC-123');
+    });
+
+    it('handles null key', () => {
+      const output = template.compile(
+        '{{#each (lookupArray testArray null)}} {{{.}}}{{/each}}',
+        {
+          testArray: [
+            {
+              null: 'ABC-123',
+            },
+          ],
+        },
+        false,
+      );
+
+      expect(output).toBe(' ABC-123');
+    });
+  });
+
+  describe('distinct', () => {
+    it('skips duplicate values', () => {
+      const output = template.compile(
+        '{{#each (distinct (lookupArray (lookupArray upgrades "prBodyDefinitions") "Issue"))}} {{{.}}}{{/each}}',
+        {
+          upgrades: [
+            {
+              prBodyDefinitions: {
+                Issue: 'ABC-123',
+              },
+            },
+            {
+              prBodyDefinitions: {
+                Issue: 'DEF-456',
+              },
+            },
+            {
+              prBodyDefinitions: {
+                Issue: 'ABC-123',
+              },
+            },
+          ],
+        },
+      );
+
+      expect(output).toBe(' ABC-123 DEF-456');
+    });
+
+    it('handles null elements', () => {
+      const output = template.compile(
+        '{{#each (distinct input)}}{{{.}}}{{/each}}',
+        {
+          input: [null, null],
+        },
+        false,
+      );
+
+      expect(output).toBe('');
+    });
+
+    it('handles null input', () => {
+      const output = template.compile(
+        '{{#each (distinct input)}}{{{.}}}{{/each}}',
+        {
+          input: null,
+        },
+        false,
+      );
+
+      expect(output).toBe('');
     });
   });
 });

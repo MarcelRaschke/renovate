@@ -2,6 +2,9 @@ import { execSync as _execSync } from 'node:child_process';
 import { mockedFunction } from '../../../../test/util';
 import { LocalFs } from './scm';
 
+jest.mock('glob', () => ({
+  glob: jest.fn().mockImplementation(() => Promise.resolve(['file1', 'file2'])),
+}));
 jest.mock('node:child_process');
 const execSync = mockedFunction(_execSync);
 
@@ -18,7 +21,7 @@ describe('modules/platform/local/scm', () => {
     });
 
     it('isBranchModified', async () => {
-      expect(await localFs.isBranchModified('')).toBe(false);
+      expect(await localFs.isBranchModified('', '')).toBe(false);
     });
 
     it('isBranchConflicted', async () => {
@@ -56,11 +59,6 @@ describe('modules/platform/local/scm', () => {
       execSync.mockImplementationOnce(() => {
         throw new Error();
       });
-      jest.mock('glob', () => ({
-        glob: jest
-          .fn()
-          .mockImplementation(() => Promise.resolve(['file1', 'file2'])),
-      }));
 
       expect(await localFs.getFileList()).toHaveLength(2);
     });

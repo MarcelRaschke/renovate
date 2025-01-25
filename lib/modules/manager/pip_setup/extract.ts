@@ -1,7 +1,9 @@
 import { RANGE_PATTERN } from '@renovatebot/pep440';
-import { lang, lexer, parser, query as q } from 'good-enough-parser';
+import type { lexer, parser } from 'good-enough-parser';
+import { lang, query as q } from 'good-enough-parser';
 import { regEx } from '../../../util/regex';
 import { PypiDatasource } from '../../datasource/pypi';
+import { normalizePythonDepName } from '../../datasource/pypi/common';
 import type {
   ExtractConfig,
   PackageDependency,
@@ -36,7 +38,7 @@ const extractRegex = regEx(depPattern);
 // Extract dependency string
 function depStringHandler(
   ctx: Context,
-  token: lexer.StringValueToken
+  token: lexer.StringValueToken,
 ): Context {
   const depStr = token.value;
   const match = extractRegex.exec(depStr);
@@ -45,12 +47,17 @@ function depStringHandler(
 
   const dep: PackageDependency<ManagerData> = {
     depName,
+    packageName: normalizePythonDepName(depName),
     currentValue,
     managerData: {
       lineNumber: token.line - 1,
     },
     datasource: PypiDatasource.id,
   };
+
+  if (currentValue?.startsWith('==')) {
+    dep.currentVersion = currentValue.replace(regEx(/^==\s*/), '');
+  }
 
   return { ...ctx, deps: [...ctx.deps, dep] };
 }
@@ -73,7 +80,7 @@ const depString = q
   .opt(
     q
       .opt(q.op<Context>(','))
-      .comment(/^#\s*renovate\s*:\s*ignore\s*$/, depSkipHandler)
+      .comment(/^#\s*renovate\s*:\s*ignore\s*$/, depSkipHandler),
   );
 
 const query = q.alt(incompleteDepString, depString);
@@ -81,7 +88,7 @@ const query = q.alt(incompleteDepString, depString);
 export function extractPackageFile(
   content: string,
   _packageFile: string,
-  _config: ExtractConfig
+  _config: ExtractConfig,
 ): PackageFileContent | null {
   const res = python.query<Context, parser.Node>(content, query, { deps: [] });
   return res?.deps?.length ? res : null;

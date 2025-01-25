@@ -4,6 +4,8 @@ import { getPkgReleases } from '../../../../../modules/datasource';
 import type { Release } from '../../../../../modules/datasource/types';
 import * as allVersioning from '../../../../../modules/versioning';
 import * as packageCache from '../../../../../util/cache/package';
+import type { PackageCacheNamespace } from '../../../../../util/cache/package/types';
+import { memoize } from '../../../../../util/memoize';
 import { regEx } from '../../../../../util/regex';
 import { parseUrl, trimSlashes } from '../../../../../util/url';
 import type { BranchUpgradeConfig } from '../../../../types';
@@ -18,7 +20,7 @@ import type {
 } from './types';
 
 export abstract class ChangeLogSource {
-  private readonly cacheNamespace: string;
+  private readonly cacheNamespace: PackageCacheNamespace;
 
   constructor(
     private readonly platform: ChangeLogPlatform,
@@ -26,7 +28,7 @@ export abstract class ChangeLogSource {
       | 'bitbucket-tags'
       | 'gitea-tags'
       | 'github-tags'
-      | 'gitlab-tags'
+      | 'gitlab-tags',
   ) {
     this.cacheNamespace = `changelog-${platform}-release`;
   }
@@ -35,7 +37,7 @@ export abstract class ChangeLogSource {
     baseUrl: string,
     repository: string,
     prevHead: string,
-    nextHead: string
+    nextHead: string,
   ): string;
 
   abstract getAPIBaseUrl(config: BranchUpgradeConfig): string;
@@ -53,7 +55,7 @@ export abstract class ChangeLogSource {
 
     if (is.nullOrUndefined(tags) || is.emptyArray(tags)) {
       logger.debug(
-        `No ${this.datasource} tags found for repository: ${repository}`
+        `No ${this.datasource} tags found for repository: ${repository}`,
       );
 
       return [];
@@ -63,7 +65,7 @@ export abstract class ChangeLogSource {
   }
 
   public async getChangeLogJSON(
-    config: BranchUpgradeConfig
+    config: BranchUpgradeConfig,
   ): Promise<ChangeLogResult | null> {
     logger.trace(`getChangeLogJSON for ${this.platform}`);
 
@@ -72,8 +74,9 @@ export abstract class ChangeLogSource {
     const newVersion = config.newVersion!;
     const sourceUrl = config.sourceUrl!;
     const packageName = config.packageName!;
+    const depName = config.depName!;
     const sourceDirectory = config.sourceDirectory;
-    const version = allVersioning.get(versioning);
+    const versioningApi = allVersioning.get(versioning);
 
     if (this.shouldSkipPackage(config)) {
       return null;
@@ -105,29 +108,33 @@ export abstract class ChangeLogSource {
     }
     // This extra filter/sort should not be necessary, but better safe than sorry
     const validReleases = [...releases]
-      .filter((release) => version.isVersion(release.version))
-      .sort((a, b) => version.sortVersions(a.version, b.version));
+      .filter((release) => versioningApi.isVersion(release.version))
+      .sort((a, b) => versioningApi.sortVersions(a.version, b.version));
 
     if (validReleases.length < 2) {
-      logger.debug(`Not enough valid releases for dep ${packageName}`);
+      logger.debug(
+        `Not enough valid releases for dep ${depName} (${packageName})`,
+      );
       return null;
     }
 
     const changelogReleases: ChangeLogRelease[] = [];
-    // compare versions
-    const include = (v: string): boolean =>
-      version.isGreaterThan(v, currentVersion) &&
-      !version.isGreaterThan(v, newVersion);
 
+    // Check if `v` belongs to the range (currentVersion, newVersion]
+    const inRange = (v: string): boolean =>
+      versioningApi.isGreaterThan(v, currentVersion) &&
+      !versioningApi.isGreaterThan(v, newVersion);
+
+    const getTags = memoize(() => this.getAllTags(apiBaseUrl, repository));
     for (let i = 1; i < validReleases.length; i += 1) {
       const prev = validReleases[i - 1];
       const next = validReleases[i];
-      if (!include(next.version)) {
+      if (!inRange(next.version)) {
         continue;
       }
       let release = await packageCache.get(
         this.cacheNamespace,
-        this.getCacheKey(sourceUrl, packageName, prev.version, next.version)
+        this.getCacheKey(sourceUrl, packageName, prev.version, next.version),
       );
       if (!release) {
         release = {
@@ -138,26 +145,27 @@ export abstract class ChangeLogSource {
           changes: [],
           compare: {},
         };
-        const prevHead = await this.getRef(
-          version,
+        const tags = await getTags();
+        const prevHead = this.getRef(
+          versioningApi,
           packageName,
+          depName,
           prev,
-          apiBaseUrl,
-          repository
+          tags,
         );
-        const nextHead = await this.getRef(
-          version,
+        const nextHead = this.getRef(
+          versioningApi,
           packageName,
+          depName,
           next,
-          apiBaseUrl,
-          repository
+          tags,
         );
         if (is.nonEmptyString(prevHead) && is.nonEmptyString(nextHead)) {
           release.compare.url = this.getCompareURL(
             baseUrl,
             repository,
             prevHead,
-            nextHead
+            nextHead,
           );
         }
         const cacheMinutes = 55;
@@ -165,7 +173,7 @@ export abstract class ChangeLogSource {
           this.cacheNamespace,
           this.getCacheKey(sourceUrl, packageName, prev.version, next.version),
           release,
-          cacheMinutes
+          cacheMinutes,
         );
       }
       changelogReleases.unshift(release);
@@ -190,36 +198,39 @@ export abstract class ChangeLogSource {
   }
 
   private findTagOfRelease(
-    version: allVersioning.VersioningApi,
+    versioningApi: allVersioning.VersioningApi,
     packageName: string,
+    depName: string,
     depNewVersion: string,
-    tags: string[]
+    tags: string[],
   ): string | undefined {
-    const regex = regEx(`(?:${packageName}|release)[@-]`, undefined, false);
-    const exactReleaseRegex = regEx(`${packageName}[@\\-_]v?${depNewVersion}`);
+    const releaseRegexPrefix = `^(?:${packageName}|${depName}|release)[@_-]v?`;
+    const regex = regEx(releaseRegexPrefix, undefined, false);
+    const exactReleaseRegex = regEx(`${releaseRegexPrefix}${depNewVersion}`);
     const exactTagsList = tags.filter((tag) => {
       return exactReleaseRegex.test(tag);
     });
     const tagList = exactTagsList.length ? exactTagsList : tags;
     return tagList
-      .filter((tag) => version.isVersion(tag.replace(regex, '')))
-      .find((tag) => version.equals(tag.replace(regex, ''), depNewVersion));
+      .filter((tag) => versioningApi.isVersion(tag.replace(regex, '')))
+      .find((tag) =>
+        versioningApi.equals(tag.replace(regex, ''), depNewVersion),
+      );
   }
 
-  private async getRef(
-    version: allVersioning.VersioningApi,
+  private getRef(
+    versioningApi: allVersioning.VersioningApi,
     packageName: string,
+    depName: string,
     release: Release,
-    apiBaseUrl: string,
-    repository: string
-  ): Promise<string | null> {
-    const tags = await this.getAllTags(apiBaseUrl, repository);
-
+    tags: string[],
+  ): string | null {
     const tagName = this.findTagOfRelease(
-      version,
+      versioningApi,
       packageName,
+      depName,
       release.version,
-      tags
+      tags,
     );
     if (is.nonEmptyString(tagName)) {
       return tagName;
@@ -234,7 +245,7 @@ export abstract class ChangeLogSource {
     sourceUrl: string,
     packageName: string,
     prev: string,
-    next: string
+    next: string,
   ): string {
     return `${slugifyUrl(sourceUrl)}:${packageName}:${prev}:${next}`;
   }
@@ -244,7 +255,7 @@ export abstract class ChangeLogSource {
     if (is.nullOrUndefined(parsedUrl)) {
       return '';
     }
-    const protocol = parsedUrl.protocol;
+    const protocol = parsedUrl.protocol.replace(regEx(/^git\+/), '');
     const host = parsedUrl.host;
     return `${protocol}//${host}/`;
   }

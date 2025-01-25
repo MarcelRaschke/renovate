@@ -17,14 +17,14 @@ async function getNodeFile(filename: string): Promise<string | null> {
       logger.debug(`Using node constraint "${constraint}" from ${filename}`);
       return constraint;
     }
-  } catch (err) {
+  } catch {
     // do nothing
   }
   return null;
 }
 
 async function getPackageJsonConstraint(
-  pkg: LazyPackageJson
+  pkg: LazyPackageJson,
 ): Promise<string | null> {
   const constraint = (await pkg.getValue()).engines?.node;
   if (constraint && semver.validRange(constraint)) {
@@ -39,7 +39,7 @@ export async function getNodeConstraint(
   config: Partial<PostUpdateConfig>,
   upgrades: Upgrade[],
   lockFileDir: string,
-  pkg: LazyPackageJson
+  pkg: LazyPackageJson,
 ): Promise<string | null> {
   const constraint =
     getNodeUpdate(upgrades) ??
@@ -61,13 +61,13 @@ export async function getNodeToolConstraint(
   config: Partial<PostUpdateConfig>,
   upgrades: Upgrade[],
   lockFileDir: string,
-  pkg: LazyPackageJson
+  pkg: LazyPackageJson,
 ): Promise<ToolConstraint> {
   const constraint = await getNodeConstraint(
     config,
     upgrades,
     lockFileDir,
-    pkg
+    pkg,
   );
 
   return {

@@ -1,14 +1,16 @@
 import is from '@sindresorhus/is';
-import type { RegexManagerTemplates } from '../../../../config/types';
+import type { Category } from '../../../../constants';
 import type {
   ExtractConfig,
+  MaybePromise,
   PackageDependency,
   PackageFileContent,
-  Result,
 } from '../../types';
+import { validMatchFields } from '../utils';
 import { handleAny, handleCombination, handleRecursive } from './strategies';
-import type { RegexManagerConfig } from './types';
-import { validMatchFields } from './utils';
+import type { RegexManagerConfig, RegexManagerTemplates } from './types';
+
+export const categories: Category[] = ['custom'];
 
 export const defaultConfig = {
   pinDigests: false,
@@ -19,8 +21,8 @@ export const displayName = 'Regex';
 export function extractPackageFile(
   content: string,
   packageFile: string,
-  config: ExtractConfig
-): Result<PackageFileContent | null> {
+  config: ExtractConfig,
+): MaybePromise<PackageFileContent | null> {
   let deps: PackageDependency[];
   switch (config.matchStringsStrategy) {
     default:
@@ -31,14 +33,14 @@ export function extractPackageFile(
       deps = handleCombination(
         content,
         packageFile,
-        config as RegexManagerConfig
+        config as RegexManagerConfig,
       );
       break;
     case 'recursive':
       deps = handleRecursive(
         content,
         packageFile,
-        config as RegexManagerConfig
+        config as RegexManagerConfig,
       );
       break;
   }
@@ -55,7 +57,7 @@ export function extractPackageFile(
     }
     // copy over templates for autoreplace
     for (const field of validMatchFields.map(
-      (f) => `${f}Template` as keyof RegexManagerTemplates
+      (f) => `${f}Template` as keyof RegexManagerTemplates,
     )) {
       if (config[field]) {
         res[field] = config[field];

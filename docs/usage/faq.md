@@ -29,19 +29,12 @@ The Renovate team only fixes bugs in an older version if:
 If you're using the Mend Renovate App, you don't need to do anything, as the Renovate maintainers update it regularly.
 If you're self hosting Renovate, use the latest release if possible.
 
-## When is the Mend Renovate App updated with new Renovate versions?
-
-The Renovate maintainers manually update the app.
-The maintainers don't follow any release schedule or release cadence.
-This means the Mend Renovate App can lag a few hours to a week behind the open source version.
-Major releases of Renovate are held back until the maintainers are reasonably certain it works for most users.
-
 ## Renovate core features not supported on all platforms
 
-| Feature               | Platforms which lack feature                               | See Renovate issue(s)                                        |
-| --------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ |
-| Dependency Dashboard  | Azure, Bitbucket, Bitbucket Server                         | [#9592](https://github.com/renovatebot/renovate/issues/9592) |
-| The Mend Renovate App | Azure, Bitbucket, Bitbucket Server, Forgejo, Gitea, GitLab |                                                              |
+| Feature               | Platforms which lack feature                    | See Renovate issue(s)                                        |
+| --------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| Dependency Dashboard  | Azure, Bitbucket, Bitbucket Server, Gerrit      | [#9592](https://github.com/renovatebot/renovate/issues/9592) |
+| The Mend Renovate App | Azure, Bitbucket Server, Forgejo, Gitea, GitLab |                                                              |
 
 ## Major platform features not supported by Renovate
 
@@ -81,9 +74,7 @@ Use the "Dependency Dashboard approval" workflow to get updates for certain pack
 
 The basic idea is that you create a new `packageRules` entry and describe what kind of package, or type of updates you want to approve beforehand.
 
-Say you want to manually approve all major `npm` package manager updates:
-
-```json
+```json title="Manually approve all major npm package manager updates"
 {
   "packageRules": [
     {
@@ -95,13 +86,11 @@ Say you want to manually approve all major `npm` package manager updates:
 }
 ```
 
-Or say you want to manually approve all major Jest updates:
-
-```json
+```json title="Manually approve all major Jest updates"
 {
   "packageRules": [
     {
-      "matchPackagePatterns": ["^jest"],
+      "matchPackageNames": ["jest"],
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true
     }
@@ -204,18 +193,20 @@ e.g.
 
 ### Apply a rule, but only for packages starting with `abc`
 
-Do the same as above, but instead of using `matchPackageNames`, use `matchPackagePatterns` and a regex:
+Do the same as above, but instead of an exact match, use a glob prefix:
 
 ```json
 {
   "packageRules": [
     {
-      "matchPackagePatterns": "^abc",
+      "matchPackageNames": "abc**",
       "assignees": ["importantreviewer"]
     }
   ]
 }
 ```
+
+For more examples, see [String Pattern Matching, example glob patterns](./string-pattern-matching.md#example-glob-patterns).
 
 ### Group all packages starting with `abc` together in one PR
 
@@ -225,7 +216,7 @@ As above, but apply a `groupName`:
 {
   "packageRules": [
     {
-      "matchPackagePatterns": "^abc",
+      "matchPackageNames": "abc**",
       "groupName": ["abc packages"]
     }
   ]

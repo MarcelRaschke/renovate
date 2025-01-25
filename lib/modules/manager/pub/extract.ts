@@ -9,25 +9,41 @@ import { parsePubspec } from './utils';
 
 function extractFromSection(
   pubspec: PubspecSchema,
-  sectionKey: keyof Pick<PubspecSchema, 'dependencies' | 'dev_dependencies'>
+  sectionKey: keyof Pick<PubspecSchema, 'dependencies' | 'dev_dependencies'>,
 ): PackageDependency[] {
   const sectionContent = pubspec[sectionKey];
   if (!sectionContent) {
     return [];
   }
 
+  const skippedPackages = [
+    'flutter_driver',
+    'flutter_localizations',
+    'flutter_test',
+    'flutter_web_plugins',
+    'meta',
+  ];
   const deps: PackageDependency[] = [];
   for (const depName of Object.keys(sectionContent)) {
-    if (depName === 'meta' || depName === 'flutter_test') {
+    if (skippedPackages.includes(depName)) {
       continue;
     }
 
     let currentValue = sectionContent[depName];
     let skipReason: SkipReason | undefined;
+    let registryUrls: string[] | undefined;
 
     if (!is.string(currentValue)) {
       const version = currentValue.version;
       const path = currentValue.path;
+      const hosted = currentValue.hosted;
+
+      if (is.string(hosted)) {
+        registryUrls = [hosted];
+      } else if (is.string(hosted?.url)) {
+        registryUrls = [hosted.url];
+      }
+
       if (version) {
         currentValue = version;
       } else if (path) {
@@ -43,6 +59,7 @@ function extractFromSection(
       depType: sectionKey,
       currentValue,
       datasource: DartDatasource.id,
+      ...(registryUrls && { registryUrls }),
       skipReason,
     });
   }
@@ -77,7 +94,7 @@ function extractFlutter(pubspec: PubspecSchema): PackageDependency[] {
 
 export function extractPackageFile(
   content: string,
-  packageFile: string
+  packageFile: string,
 ): PackageFileContent | null {
   const pubspec = parsePubspec(packageFile, content);
   if (!pubspec) {

@@ -9,6 +9,7 @@ import { newlineRegex, regEx } from '../../../util/regex';
 import { sanitize } from '../../../util/sanitize';
 import { safeStringify } from '../../../util/stringify';
 import * as template from '../../../util/template';
+import type { Timestamp } from '../../../util/timestamp';
 import { uniq } from '../../../util/uniq';
 import type { BranchConfig, BranchUpgradeConfig } from '../../types';
 import { CommitMessage } from '../model/commit-message';
@@ -25,7 +26,7 @@ function isTypesGroup(branchUpgrades: BranchUpgradeConfig[]): boolean {
   return (
     branchUpgrades.some(({ depName }) => depName?.startsWith('@types/')) &&
     new Set(
-      branchUpgrades.map(({ depName }) => depName?.replace(/^@types\//, ''))
+      branchUpgrades.map(({ depName }) => depName?.replace(/^@types\//, '')),
     ).size === 1
   );
 }
@@ -34,7 +35,7 @@ function sortTypesGroup(upgrades: BranchUpgradeConfig[]): void {
   const isTypesUpgrade = ({ depName }: BranchUpgradeConfig): boolean =>
     !!depName?.startsWith('@types/');
   const regularUpgrades = upgrades.filter(
-    (upgrade) => !isTypesUpgrade(upgrade)
+    (upgrade) => !isTypesUpgrade(upgrade),
   );
   const typesUpgrades = upgrades.filter(isTypesUpgrade);
   upgrades.splice(0, upgrades.length);
@@ -51,7 +52,7 @@ function getTableValues(upgrade: BranchUpgradeConfig): string[] | null {
   if (datasource && name && currentVersion && newVersion) {
     return [datasource, name, currentVersion, newVersion];
   }
-  logger.debug(
+  logger.trace(
     {
       datasource,
       packageName,
@@ -59,13 +60,111 @@ function getTableValues(upgrade: BranchUpgradeConfig): string[] | null {
       currentVersion,
       newVersion,
     },
-    'Cannot determine table values'
+    'Cannot determine table values',
   );
   return null;
 }
 
+function compileCommitMessage(upgrade: BranchUpgradeConfig): string {
+  if (upgrade.semanticCommits === 'enabled' && !upgrade.commitMessagePrefix) {
+    logger.trace('Upgrade has semantic commits enabled');
+    let semanticPrefix = upgrade.semanticCommitType;
+    if (upgrade.semanticCommitScope) {
+      semanticPrefix += `(${template.compile(
+        upgrade.semanticCommitScope,
+        upgrade,
+      )})`;
+    }
+    upgrade.commitMessagePrefix = CommitMessage.formatPrefix(semanticPrefix!);
+    upgrade.toLowerCase =
+      regEx(/[A-Z]/).exec(upgrade.semanticCommitType!) === null &&
+      !upgrade.semanticCommitType!.startsWith(':');
+  }
+
+  // Compile a few times in case there are nested templates
+  upgrade.commitMessage = template.compile(
+    upgrade.commitMessage ?? '',
+    upgrade,
+  );
+  upgrade.commitMessage = template.compile(upgrade.commitMessage, upgrade);
+  upgrade.commitMessage = template.compile(upgrade.commitMessage, upgrade);
+  // istanbul ignore if
+  if (upgrade.commitMessage !== sanitize(upgrade.commitMessage)) {
+    logger.debug(
+      { branchName: upgrade.branchName },
+      'Secrets exposed in commit message',
+    );
+    throw new Error(CONFIG_SECRETS_EXPOSED);
+  }
+  upgrade.commitMessage = upgrade.commitMessage.trim(); // Trim exterior whitespace
+  upgrade.commitMessage = upgrade.commitMessage.replace(regEx(/\s+/g), ' '); // Trim extra whitespace inside string
+  upgrade.commitMessage = upgrade.commitMessage.replace(
+    regEx(/to vv(\d)/),
+    'to v$1',
+  );
+  if (upgrade.toLowerCase && upgrade.commitMessageLowerCase !== 'never') {
+    // We only need to lowercase the first line
+    const splitMessage = upgrade.commitMessage.split(newlineRegex);
+    splitMessage[0] = splitMessage[0].toLowerCase();
+    upgrade.commitMessage = splitMessage.join('\n');
+  }
+
+  logger.trace(`commitMessage: ` + JSON.stringify(upgrade.commitMessage));
+  return upgrade.commitMessage;
+}
+
+function compilePrTitle(
+  upgrade: BranchUpgradeConfig,
+  commitMessage: string,
+): void {
+  if (upgrade.prTitle) {
+    upgrade.prTitle = template.compile(upgrade.prTitle, upgrade);
+    upgrade.prTitle = template.compile(upgrade.prTitle, upgrade);
+    upgrade.prTitle = template
+      .compile(upgrade.prTitle, upgrade)
+      .trim()
+      .replace(regEx(/\s+/g), ' ');
+    // istanbul ignore if
+    if (upgrade.prTitle !== sanitize(upgrade.prTitle)) {
+      logger.debug(
+        { branchName: upgrade.branchName },
+        'Secrets were exposed in PR title',
+      );
+      throw new Error(CONFIG_SECRETS_EXPOSED);
+    }
+    if (upgrade.toLowerCase && upgrade.commitMessageLowerCase !== 'never') {
+      upgrade.prTitle = upgrade.prTitle.toLowerCase();
+    }
+  } else {
+    [upgrade.prTitle] = commitMessage.split(newlineRegex);
+  }
+  if (!upgrade.prTitleStrict) {
+    upgrade.prTitle += upgrade.hasBaseBranches ? ' ({{baseBranch}})' : '';
+    if (upgrade.isGroup) {
+      upgrade.prTitle +=
+        upgrade.updateType === 'major' && upgrade.separateMajorMinor
+          ? ' (major)'
+          : '';
+      upgrade.prTitle +=
+        upgrade.updateType === 'minor' && upgrade.separateMinorPatch
+          ? ' (minor)'
+          : '';
+      upgrade.prTitle +=
+        upgrade.updateType === 'patch' && upgrade.separateMinorPatch
+          ? ' (patch)'
+          : '';
+    }
+  }
+  // Compile again to allow for nested templates
+  upgrade.prTitle = template.compile(upgrade.prTitle, upgrade);
+  logger.trace(`prTitle: ` + JSON.stringify(upgrade.prTitle));
+}
+
+// Sorted by priority, from low to high
+const semanticCommitTypeByPriority = ['chore', 'ci', 'build', 'fix', 'feat'];
+
 export function generateBranchConfig(
-  upgrades: BranchUpgradeConfig[]
+  upgrades: BranchUpgradeConfig[],
 ): BranchConfig {
   let branchUpgrades = upgrades;
   if (!branchUpgrades.every((upgrade) => upgrade.pendingChecks)) {
@@ -83,6 +182,7 @@ export function generateBranchConfig(
   const newValue: string[] = [];
   const toVersions: string[] = [];
   const toValues = new Set<string>();
+  const depTypes = new Set<string>();
   for (const upg of branchUpgrades) {
     upg.recreateClosed = upg.recreateWhen === 'always';
 
@@ -119,6 +219,9 @@ export function generateBranchConfig(
       toVersions.push(upg.newVersion!);
     }
     toValues.add(upg.newValue!);
+    if (upg.depType) {
+      depTypes.add(upg.depType);
+    }
     // prettify newVersion and newMajor for printing
     if (upg.newVersion) {
       upg.prettyNewVersion = prettifyVersion(upg.newVersion);
@@ -143,9 +246,16 @@ export function generateBranchConfig(
   logger.trace(`groupEligible: ${groupEligible}`);
   const useGroupSettings = hasGroupName && groupEligible;
   logger.trace(`useGroupSettings: ${useGroupSettings}`);
-  let releaseTimestamp: string;
+  let releaseTimestamp: Timestamp;
+
+  if (depTypes.size) {
+    config.depTypes = Array.from(depTypes).sort();
+  }
+
   for (const branchUpgrade of branchUpgrades) {
     let upgrade: BranchUpgradeConfig = { ...branchUpgrade };
+
+    upgrade.depTypes = config.depTypes;
 
     // needs to be done for each upgrade, as we reorder them below
     if (newValue.length > 1 && !groupEligible) {
@@ -196,92 +306,6 @@ export function generateBranchConfig(
     } else if (semver.valid(toVersions[0])) {
       upgrade.isRange = false;
     }
-    // Use templates to generate strings
-    if (upgrade.semanticCommits === 'enabled' && !upgrade.commitMessagePrefix) {
-      logger.trace('Upgrade has semantic commits enabled');
-      let semanticPrefix = upgrade.semanticCommitType;
-      if (upgrade.semanticCommitScope) {
-        semanticPrefix += `(${template.compile(
-          upgrade.semanticCommitScope,
-          upgrade
-        )})`;
-      }
-      upgrade.commitMessagePrefix = CommitMessage.formatPrefix(semanticPrefix!);
-      upgrade.toLowerCase =
-        regEx(/[A-Z]/).exec(upgrade.semanticCommitType!) === null &&
-        !upgrade.semanticCommitType!.startsWith(':');
-    }
-
-    // Compile a few times in case there are nested templates
-    upgrade.commitMessage = template.compile(
-      upgrade.commitMessage ?? '',
-      upgrade
-    );
-    upgrade.commitMessage = template.compile(upgrade.commitMessage, upgrade);
-    upgrade.commitMessage = template.compile(upgrade.commitMessage, upgrade);
-    // istanbul ignore if
-    if (upgrade.commitMessage !== sanitize(upgrade.commitMessage)) {
-      logger.debug(
-        { branchName: config.branchName },
-        'Secrets exposed in commit message'
-      );
-      throw new Error(CONFIG_SECRETS_EXPOSED);
-    }
-    upgrade.commitMessage = upgrade.commitMessage.trim(); // Trim exterior whitespace
-    upgrade.commitMessage = upgrade.commitMessage.replace(regEx(/\s+/g), ' '); // Trim extra whitespace inside string
-    upgrade.commitMessage = upgrade.commitMessage.replace(
-      regEx(/to vv(\d)/),
-      'to v$1'
-    );
-    if (upgrade.toLowerCase && upgrade.commitMessageLowerCase !== 'never') {
-      // We only need to lowercase the first line
-      const splitMessage = upgrade.commitMessage.split(newlineRegex);
-      splitMessage[0] = splitMessage[0].toLowerCase();
-      upgrade.commitMessage = splitMessage.join('\n');
-    }
-
-    logger.trace(`commitMessage: ` + JSON.stringify(upgrade.commitMessage));
-    if (upgrade.prTitle) {
-      upgrade.prTitle = template.compile(upgrade.prTitle, upgrade);
-      upgrade.prTitle = template.compile(upgrade.prTitle, upgrade);
-      upgrade.prTitle = template
-        .compile(upgrade.prTitle, upgrade)
-        .trim()
-        .replace(regEx(/\s+/g), ' ');
-      // istanbul ignore if
-      if (upgrade.prTitle !== sanitize(upgrade.prTitle)) {
-        logger.debug(
-          { branchName: config.branchName },
-          'Secrets were exposed in PR title'
-        );
-        throw new Error(CONFIG_SECRETS_EXPOSED);
-      }
-      if (upgrade.toLowerCase && upgrade.commitMessageLowerCase !== 'never') {
-        upgrade.prTitle = upgrade.prTitle.toLowerCase();
-      }
-    } else {
-      [upgrade.prTitle] = upgrade.commitMessage.split(newlineRegex);
-    }
-    if (!upgrade.prTitleStrict) {
-      upgrade.prTitle += upgrade.hasBaseBranches ? ' ({{baseBranch}})' : '';
-      if (upgrade.isGroup) {
-        upgrade.prTitle +=
-          upgrade.updateType === 'major' && upgrade.separateMajorMinor
-            ? ' (major)'
-            : '';
-        upgrade.prTitle +=
-          upgrade.updateType === 'minor' && upgrade.separateMinorPatch
-            ? ' (minor)'
-            : '';
-        upgrade.prTitle +=
-          upgrade.updateType === 'patch' && upgrade.separateMinorPatch
-            ? ' (patch)'
-            : '';
-      }
-    }
-    // Compile again to allow for nested templates
-    upgrade.prTitle = template.compile(upgrade.prTitle, upgrade);
-    logger.trace(`prTitle: ` + JSON.stringify(upgrade.prTitle));
     config.upgrades.push(upgrade);
     if (upgrade.releaseTimestamp) {
       if (releaseTimestamp!) {
@@ -334,27 +358,53 @@ export function generateBranchConfig(
     ...config.upgrades[0],
     releaseTimestamp: releaseTimestamp!,
   }; // TODO: fixme (#9666)
-  config.reuseLockFiles = config.upgrades.every(
-    (upgrade) => upgrade.updateType !== 'lockFileMaintenance'
-  );
+
+  // Enable `semanticCommits` if one of the branches has it enabled
+  if (
+    config.upgrades.some((upgrade) => upgrade.semanticCommits === 'enabled')
+  ) {
+    config.semanticCommits = 'enabled';
+    // Calculate the highest priority `semanticCommitType`
+    let highestIndex = -1;
+    for (const upgrade of config.upgrades) {
+      if (upgrade.semanticCommits === 'enabled' && upgrade.semanticCommitType) {
+        const priorityIndex = semanticCommitTypeByPriority.indexOf(
+          upgrade.semanticCommitType,
+        );
+
+        if (priorityIndex > highestIndex) {
+          highestIndex = priorityIndex;
+        }
+      }
+    }
+
+    if (highestIndex > -1) {
+      config.semanticCommitType = semanticCommitTypeByPriority[highestIndex];
+    }
+  }
+
+  // Use templates to generate strings
+  const commitMessage = compileCommitMessage(config);
+  compilePrTitle(config, commitMessage);
+
   config.dependencyDashboardApproval = config.upgrades.some(
-    (upgrade) => upgrade.dependencyDashboardApproval
+    (upgrade) => upgrade.dependencyDashboardApproval,
   );
   config.dependencyDashboardPrApproval = config.upgrades.some(
-    (upgrade) => upgrade.prCreation === 'approval'
+    (upgrade) => upgrade.prCreation === 'approval',
   );
   config.prBodyColumns = [
     ...new Set(
       config.upgrades.reduce(
         (existing: string[], upgrade) =>
           existing.concat(upgrade.prBodyColumns!),
-        []
-      )
+        [],
+      ),
     ),
   ].filter(is.nonEmptyString);
   // combine excludeCommitPaths for multiple manager experience
   const hasExcludeCommitPaths = config.upgrades.some(
-    (u) => u.excludeCommitPaths && u.excludeCommitPaths.length > 0
+    (u) => u.excludeCommitPaths && u.excludeCommitPaths.length > 0,
   );
   if (hasExcludeCommitPaths) {
     config.excludeCommitPaths = Object.keys(
@@ -366,7 +416,7 @@ export function generateBranchConfig(
         }
 
         return acc;
-      }, {})
+      }, {}),
     );
   }
 
@@ -376,14 +426,14 @@ export function generateBranchConfig(
     ...new Set(
       config.upgrades
         .map((upgrade) => upgrade.labels ?? [])
-        .reduce((a, b) => a.concat(b), [])
+        .reduce((a, b) => a.concat(b), []),
     ),
   ];
   config.addLabels = [
     ...new Set(
       config.upgrades
         .map((upgrade) => upgrade.addLabels ?? [])
-        .reduce((a, b) => a.concat(b), [])
+        .reduce((a, b) => a.concat(b), []),
     ),
   ];
   if (config.upgrades.some((upgrade) => upgrade.updateType === 'major')) {
@@ -420,7 +470,7 @@ export function generateBranchConfig(
     config.upgrades
       .map((upgrade) => upgrade.additionalReviewers)
       .flat()
-      .filter(is.nonEmptyString)
+      .filter(is.nonEmptyString),
   );
   if (additionalReviewers.length > 0) {
     config.additionalReviewers = additionalReviewers;

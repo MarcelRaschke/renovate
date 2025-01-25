@@ -8,7 +8,7 @@ export function setOnboardingCache(
   defaultBranchSha: string,
   onboardingBranchSha: string,
   isConflicted: boolean,
-  isModified: boolean
+  isModified: boolean,
 ): void {
   // do not update cache if commit is null/undefined
   if (
@@ -60,7 +60,8 @@ export function hasOnboardingBranchChanged(onboardingBranch: string): boolean {
 // checks if onboarding branch has been modified by user
 // once set to true it stays true as we do not rebase onboarding branches anymore (this feature will be added in future though)
 export async function isOnboardingBranchModified(
-  onboardingBranch: string
+  onboardingBranch: string,
+  defaultBranch: string,
 ): Promise<boolean> {
   const cache = getCache();
   const onboardingCache = cache.onboardingBranchCache;
@@ -74,7 +75,7 @@ export async function isOnboardingBranchModified(
   ) {
     return onboardingCache.isModified;
   } else {
-    isModified = await scm.isBranchModified(onboardingBranch);
+    isModified = await scm.isBranchModified(onboardingBranch, defaultBranch);
   }
 
   return isModified;
@@ -92,7 +93,7 @@ export function getOnboardingConfigFromCache(): string | undefined {
 
 export function setOnboardingConfigDetails(
   configFileName: string,
-  configFileParsed: string
+  configFileParsed: string,
 ): void {
   const cache = getCache();
   if (cache.onboardingBranchCache) {
@@ -103,7 +104,7 @@ export function setOnboardingConfigDetails(
 
 export async function isOnboardingBranchConflicted(
   defaultBranch: string,
-  onboardingBranch: string
+  onboardingBranch: string,
 ): Promise<boolean> {
   const cache = getCache();
   const onboardingCache = cache.onboardingBranchCache;
@@ -121,7 +122,7 @@ export async function isOnboardingBranchConflicted(
   } else {
     isConflicted = await scm.isBranchConflicted(
       defaultBranch,
-      onboardingBranch
+      onboardingBranch,
     );
   }
 

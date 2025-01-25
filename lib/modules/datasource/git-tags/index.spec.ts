@@ -1,4 +1,5 @@
-import { SimpleGit, simpleGit } from 'simple-git';
+import type { SimpleGit } from 'simple-git';
+import { simpleGit } from 'simple-git';
 import { getPkgReleases } from '..';
 import { Fixtures } from '../../../../test/fixtures';
 import { add, clear } from '../../../util/host-rules';
@@ -66,7 +67,7 @@ describe('modules/datasource/git-tags/index', () => {
 
       const digest = await datasourceInstance.getDigest(
         { packageName: 'a tag to look up' },
-        'notfound'
+        'notfound',
       );
       expect(digest).toBeNull();
     });
@@ -76,7 +77,7 @@ describe('modules/datasource/git-tags/index', () => {
 
       const digest = await datasourceInstance.getDigest(
         { packageName: 'a tag to look up' },
-        'v1.0.2'
+        'v1.0.2',
       );
       expect(digest).toBe('9cb93e0b236385a4e2efd089d7c6a458f5ff321f');
     });
@@ -86,7 +87,7 @@ describe('modules/datasource/git-tags/index', () => {
 
       const digest = await datasourceInstance.getDigest(
         { packageName: 'another tag to look up' },
-        undefined
+        undefined,
       );
       expect(digest).toBe('a9920c014aebc28dc1b23e7efcc006d0455cc710');
     });
@@ -102,7 +103,7 @@ describe('modules/datasource/git-tags/index', () => {
 
       const digest = await datasourceInstance.getDigest(
         { packageName: 'another tag to look up' },
-        undefined
+        undefined,
       );
       expect(digest).toBe('a9920c014aebc28dc1b23e7efcc006d0455cc710');
       expect(gitMock.env).toHaveBeenCalledWith({
@@ -127,7 +128,7 @@ describe('modules/datasource/git-tags/index', () => {
 
       const digest = await datasourceInstance.getDigest(
         { packageName: 'another tag to look up' },
-        undefined
+        undefined,
       );
       expect(digest).toBe('a9920c014aebc28dc1b23e7efcc006d0455cc710');
       expect(gitMock.env).toHaveBeenCalledWith({

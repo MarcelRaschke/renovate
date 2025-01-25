@@ -8,6 +8,7 @@ exports[`config/presets/index getPreset gets linters 1`] = `
   "extends": [
     "packages:emberTemplateLint",
     "packages:eslint",
+    "packages:phpLinters",
     "packages:stylelint",
     "packages:tslint",
   ],
@@ -30,7 +31,7 @@ exports[`config/presets/index resolvePreset migrates automerge in presets 1`] = 
   "automergeType": "pr",
   "branchPrefix": "renovate/",
   "description": [
-    "Prefix \`renovate/\` to all branch names.",
+    "Add the \`renovate/\` prefix to all branch names.",
     "Use semantic commit type \`fix\` for dependencies and \`chore\` for all others if semantic commits are in use.",
     "Require all status checks to pass before any automerging.",
     "Pin dependency versions for \`devDependencies\` and retain SemVer ranges for others.",
@@ -55,7 +56,7 @@ exports[`config/presets/index resolvePreset migrates automerge in presets 1`] = 
   },
   "packageRules": [
     {
-      "matchPackagePatterns": [
+      "matchPackageNames": [
         "*",
       ],
       "semanticCommitType": "chore",
@@ -82,7 +83,27 @@ exports[`config/presets/index resolvePreset migrates automerge in presets 1`] = 
       "semanticCommitType": "fix",
     },
     {
-      "matchPackagePatterns": [
+      "matchDepTypes": [
+        "project.dependencies",
+        "project.optional-dependencies",
+      ],
+      "matchManagers": [
+        "pep621",
+      ],
+      "semanticCommitType": "fix",
+    },
+    {
+      "matchDepTypes": [
+        "dependencies",
+        "extras",
+      ],
+      "matchManagers": [
+        "poetry",
+      ],
+      "semanticCommitType": "fix",
+    },
+    {
+      "matchPackageNames": [
         "*",
       ],
       "rangeStrategy": "replace",
@@ -118,10 +139,14 @@ exports[`config/presets/index resolvePreset resolves eslint 1`] = `
   "matchPackageNames": [
     "@types/eslint",
     "babel-eslint",
-  ],
-  "matchPackagePrefixes": [
-    "@typescript-eslint/",
-    "eslint",
+    "@babel/eslint-parser",
+    "@eslint/**",
+    "@eslint-community/**",
+    "@stylistic/eslint-plugin**",
+    "@types/eslint__**",
+    "@typescript-eslint/**",
+    "typescript-eslint",
+    "eslint**",
   ],
 }
 `;
@@ -132,21 +157,26 @@ exports[`config/presets/index resolvePreset resolves linters 1`] = `
     "All lint-related packages.",
   ],
   "matchPackageNames": [
+    "ember-template-lint**",
     "@types/eslint",
     "babel-eslint",
+    "@babel/eslint-parser",
+    "@eslint/**",
+    "@eslint-community/**",
+    "@stylistic/eslint-plugin**",
+    "@types/eslint__**",
+    "@typescript-eslint/**",
+    "typescript-eslint",
+    "eslint**",
+    "friendsofphp/php-cs-fixer",
+    "squizlabs/php_codesniffer",
+    "symplify/easy-coding-standard",
+    "stylelint**",
     "codelyzer",
+    "/\\btslint\\b/",
     "prettier",
     "remark-lint",
     "standard",
-  ],
-  "matchPackagePatterns": [
-    "\\btslint\\b",
-  ],
-  "matchPackagePrefixes": [
-    "ember-template-lint",
-    "@typescript-eslint/",
-    "eslint",
-    "stylelint",
   ],
 }
 `;
@@ -163,21 +193,26 @@ exports[`config/presets/index resolvePreset resolves nested groups 1`] = `
         "All lint-related packages.",
       ],
       "matchPackageNames": [
+        "ember-template-lint**",
         "@types/eslint",
         "babel-eslint",
+        "@babel/eslint-parser",
+        "@eslint/**",
+        "@eslint-community/**",
+        "@stylistic/eslint-plugin**",
+        "@types/eslint__**",
+        "@typescript-eslint/**",
+        "typescript-eslint",
+        "eslint**",
+        "friendsofphp/php-cs-fixer",
+        "squizlabs/php_codesniffer",
+        "symplify/easy-coding-standard",
+        "stylelint**",
         "codelyzer",
+        "/\\btslint\\b/",
         "prettier",
         "remark-lint",
         "standard",
-      ],
-      "matchPackagePatterns": [
-        "\\btslint\\b",
-      ],
-      "matchPackagePrefixes": [
-        "ember-template-lint",
-        "@typescript-eslint/",
-        "eslint",
-        "stylelint",
       ],
     },
   ],

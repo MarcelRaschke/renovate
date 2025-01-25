@@ -1,15 +1,18 @@
 import { cache } from '../../../util/cache/package/decorator';
+import type { PackageCacheNamespace } from '../../../util/cache/package/types';
 import { BitbucketHttp } from '../../../util/http/bitbucket';
+import { asTimestamp } from '../../../util/timestamp';
 import { ensureTrailingSlash } from '../../../util/url';
-import type { PagedResult, RepoInfoBody } from '../../platform/bitbucket/types';
+import { RepoInfo } from '../../platform/bitbucket/schema';
+import type { PagedResult } from '../../platform/bitbucket/types';
 import { Datasource } from '../datasource';
 import type { DigestConfig, GetReleasesConfig, ReleaseResult } from '../types';
 import type { BitbucketCommit, BitbucketTag } from './types';
 
 export class BitbucketTagsDatasource extends Datasource {
-  bitbucketHttp = new BitbucketHttp(BitbucketTagsDatasource.id);
-
   static readonly id = 'bitbucket-tags';
+
+  bitbucketHttp = new BitbucketHttp(BitbucketTagsDatasource.id);
 
   static readonly customRegistrySupport = true;
 
@@ -17,7 +20,14 @@ export class BitbucketTagsDatasource extends Datasource {
 
   static readonly defaultRegistryUrls = ['https://bitbucket.org'];
 
-  static readonly cacheNamespace = `datasource-${BitbucketTagsDatasource.id}`;
+  static readonly releaseTimestampSupport = true;
+  static readonly releaseTimestampNote =
+    'The release timestamp is determined from the `date` field in the results.';
+  static readonly sourceUrlSupport = 'package';
+  static readonly sourceUrlNote =
+    'The source URL is determined by using the `packageName` and `registryUrl`.';
+
+  static readonly cacheNamespace: PackageCacheNamespace = `datasource-${BitbucketTagsDatasource.id}`;
 
   constructor() {
     super(BitbucketTagsDatasource.id);
@@ -31,10 +41,10 @@ export class BitbucketTagsDatasource extends Datasource {
   static getCacheKey(
     registryUrl: string | undefined,
     repo: string,
-    type: string
+    type: string,
   ): string {
     return `${BitbucketTagsDatasource.getRegistryURL(
-      registryUrl
+      registryUrl,
     )}:${repo}:${type}`;
   }
 
@@ -56,9 +66,12 @@ export class BitbucketTagsDatasource extends Datasource {
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
     const url = `/2.0/repositories/${repo}/refs/tags`;
     const bitbucketTags = (
-      await this.bitbucketHttp.getJson<PagedResult<BitbucketTag>>(url, {
-        paginate: true,
-      })
+      await this.bitbucketHttp.getJsonUnchecked<PagedResult<BitbucketTag>>(
+        url,
+        {
+          paginate: true,
+        },
+      )
     ).body.values;
 
     const dependency: ReleaseResult = {
@@ -67,7 +80,7 @@ export class BitbucketTagsDatasource extends Datasource {
       releases: bitbucketTags.map(({ name, target }) => ({
         version: name,
         gitRef: name,
-        releaseTimestamp: target?.date,
+        releaseTimestamp: asTimestamp(target?.date),
       })),
     };
 
@@ -83,12 +96,13 @@ export class BitbucketTagsDatasource extends Datasource {
   async getTagCommit(
     _registryUrl: string | undefined,
     repo: string,
-    tag: string
+    tag: string,
   ): Promise<string | null> {
     const url = `/2.0/repositories/${repo}/refs/tags/${tag}`;
 
-    const bitbucketTag = (await this.bitbucketHttp.getJson<BitbucketTag>(url))
-      .body;
+    const bitbucketTag = (
+      await this.bitbucketHttp.getJsonUnchecked<BitbucketTag>(url)
+    ).body;
 
     return bitbucketTag.target?.hash ?? null;
   }
@@ -99,12 +113,10 @@ export class BitbucketTagsDatasource extends Datasource {
       BitbucketTagsDatasource.getCacheKey(registryUrl, repo, 'mainbranch'),
     ttlMinutes: 60,
   })
-  async getMainBranch(repo: string): Promise<string> {
+  async getMainBranch(_registryUrl: string, repo: string): Promise<string> {
     return (
-      await this.bitbucketHttp.getJson<RepoInfoBody>(
-        `/2.0/repositories/${repo}`
-      )
-    ).body.mainbranch.name;
+      await this.bitbucketHttp.getJson(`/2.0/repositories/${repo}`, RepoInfo)
+    ).body.mainbranch;
   }
 
   // getDigest fetched the latest commit for repository main branch
@@ -116,17 +128,22 @@ export class BitbucketTagsDatasource extends Datasource {
   })
   override async getDigest(
     { packageName: repo, registryUrl }: DigestConfig,
-    newValue?: string
+    newValue?: string,
   ): Promise<string | null> {
     if (newValue?.length) {
       return this.getTagCommit(registryUrl, repo, newValue);
     }
 
-    const mainBranch = await this.getMainBranch(repo);
+    const mainBranch = await this.getMainBranch(
+      BitbucketTagsDatasource.getRegistryURL(registryUrl),
+      repo,
+    );
 
     const url = `/2.0/repositories/${repo}/commits/${mainBranch}`;
     const bitbucketCommits = (
-      await this.bitbucketHttp.getJson<PagedResult<BitbucketCommit>>(url)
+      await this.bitbucketHttp.getJsonUnchecked<PagedResult<BitbucketCommit>>(
+        url,
+      )
     ).body;
 
     if (bitbucketCommits.values.length === 0) {

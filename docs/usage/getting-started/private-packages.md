@@ -20,7 +20,7 @@ There are four times in Renovate's behavior when it may need credentials:
 
 - Resolving private config presets
 - Looking up dependency versions
-- Looking up release notes
+- Looking up changelogs
 - Passing to package managers when updating lock files or checksums
 
 <!-- prettier-ignore -->
@@ -36,7 +36,7 @@ However if you do still use them, private modules should work if you configure `
 It is strongly recommended not to use private modules on a private registry and a warning will be logged if that is found.
 Credentials stored on disk (e.g. in `~/.npmrc`) are no longer supported.
 
-The recommended way of using local presets is to configure then using "local" presets, e.g. `"extends": ["local>myorg/renovate-config"]`, and ensure that the platform token has access to that repo.
+The recommended way of using local presets is to configure them using "local" presets, e.g. `"extends": ["local>myorg/renovate-config"]`, and ensure that the platform token has access to that repo.
 
 It's not recommended that you use a private repository to host your config while then extending it from a public repository.
 If your preset doesn't have secrets then you should make it public, while if it does have secrets then it's better to split your preset between a public one which all repos extend, and a private one with secrets which only other private repos extend.
@@ -67,9 +67,7 @@ In addition to the above options to match against a host, you need to add the cr
 Typically they are either `token`, or `username` + `password`.
 Other credential terms are not supported yet.
 
-Here is an example of some host rules:
-
-```json
+```json title="Example host rules"
 {
   "hostRules": [
     {
@@ -85,7 +83,7 @@ Here is an example of some host rules:
 }
 ```
 
-Renovate applies theses `hostRules` to every HTTP(s) request which is sent, so they are largely independent of any platform or datasource logic.
+Renovate applies these `hostRules` to every HTTP(s) request which is sent, so they are largely independent of any platform or datasource logic.
 With `hostRules` in place, private package lookups should all work.
 
 ### GitHub (and Enterprise) repo scoped credentials
@@ -144,14 +142,14 @@ Assume this config is used on the `github.com/some-other-org` repo:
 }
 ```
 
-## Looking up Release Notes
+## Looking up changelogs
 
 When Renovate creates Pull Requests, its default behavior is to locate and embed release notes/changelogs of packages.
 These release notes are fetched from the source repository of packages and not from the registries themselves, so if they are private then they will require different credentials.
 
 When it comes to open source, most packages host their source on `github.com` in public repositories.
 GitHub greatly rate limits unauthenticated API requests, so you need to configure credentials for `github.com` or the bot will get rate limited quickly.
-It can be confusing for people who host their own source code privately to be asked to configure a `github.com` token but without it Release Notes for most open source packages will be blocked.
+It can be confusing for people who host their own source code privately to be asked to configure a `github.com` token but without it changelogs for most open source packages will be blocked.
 
 Currently the preferred way to configure `github.com` credentials for self-hosted Renovate is:
 
@@ -210,7 +208,7 @@ The environment variables used are: `GIT_CONFIG_KEY_0=url.https://${token}@githu
 Maybe you're running your own ChartMuseum server to host your private Helm Charts.
 This is how you connect to a private Helm repository:
 
-```js
+```js title="Connecting to a private Helm repository"
 module.exports = {
   hostRules: [
     {
@@ -384,14 +382,20 @@ For example, the Renovate configuration:
 
 will update `.yarnrc.yml` as following:
 
+If no registry currently set
+
 ```yaml
 npmRegistries:
   //npm.pkg.github.com/:
     npmAuthToken: <Decrypted PAT Token>
-  //npm.pkg.github.com:
-    # this will not be overwritten and may conflict
-  https://npm.pkg.github.com/:
-    # this will not be overwritten and may conflict
+```
+
+If current registry key has protocol set:
+
+```yaml
+npmRegistries:
+  https://npm.pkg.github.com:
+    npmAuthToken: <Decrypted PAT Token>
 ```
 
 ### maven
@@ -444,6 +448,71 @@ For example:
 }
 ```
 
+### pipenv
+
+If a `Pipfile` contains a `source` with `USERNAME` or `PASSWORD` environment variables and there is a `hostRules` entry with a matching host plus `username` and `password` fields, then these variables would be passed to `pipenv lock`.
+
+For example:
+
+```ini
+[[source]]
+url = "https://$USERNAME:${PASSWORD}@mypypi.example.com/simple"
+verify_ssl = true
+name = "pypi"
+```
+
+### pip-compile
+
+The pip-compile manager can extract these directives from the input file given to Renovate:
+
+- `--index-url`
+- `--extra-index-url`
+
+Renovate matches those URLs with credentials from matching `hostRules` blocks in the Renovate configuration.
+Then Renovate passes the information to `pip-compile` via environment variables.
+
+<!-- prettier-ignore -->
+!!! warning "Put directives in the .in file, avoid the lockfile"
+    You must put the `--[extra-]index-url` directive(s) in the `.in` file, for `pip-compile` to use during Renovate jobs.
+    Do _not_ put the directive(s) in the lockfile, as this is _not_ supported.
+
+```title="requirements.in"
+--extra-index-url https://pypi.my.domain/simple
+
+private-package==1.2.3
+```
+
+```json
+{
+  "pip-compile": {
+    "fileMatch": ["requirements.in"]
+  },
+  "hostRules": [
+    {
+      "matchHost": "pypi.my.domain",
+      "username": "myuser",
+      "password": "mypassword"
+    }
+  ]
+}
+```
+
+#### Packages that Renovate needs
+
+Renovate relies on `pip`'s integration with the Python [keyring](https://pypi.org/project/keyring/) package along with the [keyrings.envvars](https://pypi.org/project/keyrings.envvars/) backend for this.
+
+##### Self-hosting Renovate
+
+This section only applies to users who self-host Renovate.
+If you self-host and use Containerbase, or our Docker sidecar container, then Renovate can already access the packages it needs.
+
+But if you are self-hosting Renovate and:
+
+- _not_ running Renovate in a Containerbase environment
+- or, _not_ using the Docker sidecar container
+
+Then you must install the Python keyring package and the keyrings.envvars package into your self-hosted environment.
+
 ### poetry
 
 For every Poetry source, a `hostRules` search is done and then any found credentials are added to env like `POETRY_HTTP_BASIC_X_USERNAME` and `POETRY_HTTP_BASIC_X_PASSWORD`, where `X` represents the normalized name of the source in `pyproject.toml`.
@@ -476,6 +545,28 @@ module.exports = {
 };
 ```
 
+## Automatic hostRules credentials for platform-hosted registries
+
+### GitHub Packages
+
+For GitHub Packages, Renovate will automatically provision hostRules for both `ghcr.io` (containers) and `*.pkg.github.com` (maven, npm, nuget, rubygems) using the GitHub platform token.
+This means that any private packages hosted on GitHub will be automatically authenticated if they are accessible using the same token by Renovate.
+
+If you wish to _override_ this authentication by providing a different token, then your rule must be _at least as specific_ as the automatic rule that Renovate generates.
+For example:
+
+```json
+{
+  "hostRules": [
+    {
+      "matchHost": "npm.pkg.github.com",
+      "hostType": "npm",
+      "token": "some-personal-access-token"
+    }
+  ]
+}
+```
+
 ## Encryption and the Mend Renovate App
 
 Many users use [the Mend Renovate App](https://github.com/apps/renovate), which is hosted by Mend.
@@ -494,30 +585,33 @@ The solution to this is that you should break your presets into public and priva
 It is strongly recommended that you avoid committing secrets to repositories, including private ones, and this includes secrets needed by Renovate to access private modules.
 The preferred approach to secrets is that the bot administrator configures them as `hostRules` which are then applied to all repositories which the bot accesses.
 
+<!-- prettier-ignore -->
+!!! warning "Store secrets for your Mend-hosted app via the web UI"
+    Mend no longer supports putting encrypted secrets in the Renovate config file on your repository.
+    Going forward, all secrets must be stored in the App settings via the web UI.
+    If you have encrypted secrets in your Renovate config, you must migrate them to the web UI.
+    Read [Migrating Secrets from Repo Config to App Settings](../mend-hosted/migrating-secrets.md) to learn how.
+
 If you need to provide credentials to the Mend Renovate App, please do this:
 
-- Encrypt each secret string using <https://app.renovatebot.com/encrypt>. Note: this encrypts using the app's public key fully in the browser and does not send the original secret to any server. You can download this file and perform the encryption fully offline if you like.
-- Wrap each secret field in an [encrypted](../configuration-options.md#encrypted) object and paste in the encrypted secret value instead. An example is shown below:
+1. Add each secret string in the Credentials section of Organisation or Repository settings in the web UI at [http://developer.mend.io](http://developer.mend.io).
 
-```json
-{
-  "hostRules": [
-    {
-      "matchHost": "registry.npmjs.org",
-      "encrypted": {
-        "token": "3f832f2983yf89hsd98ahadsjfasdfjaslf............"
-      }
-    },
-    {
-      "matchHost": "https://custom.registry.company.com/pypi/",
-      "username": "bot1",
-      "encrypted": {
-        "password": "p278djfdsi9832jnfdshufwji2r389fdskj........."
-      }
-    }
-  ]
-}
-```
+   ![Organization and repository secrets on the credentials settings page](../assets/images/app-settings/org-and-repo-secrets.png)
+
+2. Reference secrets inside your Renovate config files with notation: `{{ secrets.YOUR_SECRET }}`.
+
+   ```json
+   {
+     "hostRules": [
+       {
+         "matchHost": "github.com",
+         "token": "{{ secrets.GITHUB_COM_TOKEN }}"
+       }
+     ]
+   }
+   ```
+
+For more details, see [Using Secrets with Mend Cloud Apps](../mend-hosted/credentials.md).
 
 ### Access to GitHub Actions Secrets
 
@@ -548,4 +642,4 @@ For instructions on this, see the above section on encrypting secrets for the Me
 
 ### hostRules configuration using environment variables
 
-Self-hosted users can enable the option [`detectHostRulesFromEnv`](../self-hosted-configuration.md#detectHostRulesFromEnv) to configure the most common types of `hostRules` via environment variables.
+Self-hosted users can enable the option [`detectHostRulesFromEnv`](../self-hosted-configuration.md#detecthostrulesfromenv) to configure the most common types of `hostRules` via environment variables.

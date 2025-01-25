@@ -6,6 +6,7 @@ import {
   HOST_DISABLED,
 } from '../../constants/error-messages';
 import * as memCache from '../cache/memory';
+import { resetCache } from '../cache/repository';
 import * as hostRules from '../host-rules';
 import * as queue from './queue';
 import * as throttle from './throttle';
@@ -22,6 +23,7 @@ describe('util/http/index', () => {
     hostRules.clear();
     queue.clear();
     throttle.clear();
+    resetCache();
   });
 
   it('get', async () => {
@@ -38,7 +40,7 @@ describe('util/http/index', () => {
   it('returns 429 error', async () => {
     httpMock.scope(baseUrl).get('/test').reply(429);
     await expect(http.get('http://renovate.com/test')).rejects.toThrow(
-      'Response code 429 (Too Many Requests)'
+      'Response code 429 (Too Many Requests)',
     );
     expect(httpMock.allUsed()).toBeTrue();
   });
@@ -47,7 +49,7 @@ describe('util/http/index', () => {
     httpMock.scope(baseUrl).get('/test').reply(404);
     hostRules.add({ abortOnError: true });
     await expect(http.get('http://renovate.com/test')).rejects.toThrow(
-      EXTERNAL_HOST_ERROR
+      EXTERNAL_HOST_ERROR,
     );
     expect(httpMock.allUsed()).toBeTrue();
   });
@@ -55,7 +57,7 @@ describe('util/http/index', () => {
   it('disables hosts', async () => {
     hostRules.add({ matchHost: 'renovate.com', enabled: false });
     await expect(http.get('http://renovate.com/test')).rejects.toThrow(
-      HOST_DISABLED
+      HOST_DISABLED,
     );
   });
 
@@ -63,7 +65,7 @@ describe('util/http/index', () => {
     httpMock.scope(baseUrl).get('/test').reply(404);
     hostRules.add({ abortOnError: true, abortIgnoreStatusCodes: [404] });
     await expect(http.get('http://renovate.com/test')).rejects.toThrow(
-      'Response code 404 (Not Found)'
+      'Response code 404 (Not Found)',
     );
     expect(httpMock.allUsed()).toBeTrue();
   });
@@ -76,13 +78,18 @@ describe('util/http/index', () => {
         },
       })
       .get('/')
-      .reply(200, '{ "test": true }');
-    expect(await http.getJson('http://renovate.com')).toEqual({
+      .reply(200, '{ "test": true }', { etag: 'abc123' });
+
+    const res = await http.getJsonUnchecked('http://renovate.com');
+
+    expect(res).toEqual({
       authorization: false,
       body: {
         test: true,
       },
-      headers: {},
+      headers: {
+        etag: 'abc123',
+      },
       statusCode: 200,
     });
   });
@@ -90,7 +97,7 @@ describe('util/http/index', () => {
   it('postJson', async () => {
     httpMock.scope(baseUrl).post('/').reply(200, {});
     expect(
-      await http.postJson('http://renovate.com', { body: {}, baseUrl })
+      await http.postJson('http://renovate.com', { body: {}, baseUrl }),
     ).toEqual({
       authorization: false,
       body: {},
@@ -105,7 +112,7 @@ describe('util/http/index', () => {
   it('putJson', async () => {
     httpMock.scope(baseUrl).put('/').reply(200, {});
     expect(
-      await http.putJson('http://renovate.com', { body: {}, baseUrl })
+      await http.putJson('http://renovate.com', { body: {}, baseUrl }),
     ).toEqual({
       authorization: false,
       body: {},
@@ -120,7 +127,7 @@ describe('util/http/index', () => {
   it('patchJson', async () => {
     httpMock.scope(baseUrl).patch('/').reply(200, {});
     expect(
-      await http.patchJson('http://renovate.com', { body: {}, baseUrl })
+      await http.patchJson('http://renovate.com', { body: {}, baseUrl }),
     ).toEqual({
       authorization: false,
       body: {},
@@ -135,7 +142,7 @@ describe('util/http/index', () => {
   it('deleteJson', async () => {
     httpMock.scope(baseUrl).delete('/').reply(200, {});
     expect(
-      await http.deleteJson('http://renovate.com', { body: {}, baseUrl })
+      await http.deleteJson('http://renovate.com', { body: {}, baseUrl }),
     ).toEqual({
       authorization: false,
       body: {},
@@ -189,32 +196,8 @@ describe('util/http/index', () => {
     hostRules.add({ matchHost: 'renovate.com', enabled: false });
 
     expect(() => http.stream('http://renovate.com/test')).toThrow(
-      HOST_DISABLED
+      HOST_DISABLED,
     );
-  });
-
-  it('retries', async () => {
-    const NODE_ENV = process.env.NODE_ENV;
-    try {
-      delete process.env.NODE_ENV;
-      httpMock
-        .scope(baseUrl)
-        .head('/')
-        .reply(500)
-        .head('/')
-        .reply(200, undefined, { 'x-some-header': 'abc' });
-      expect(await http.head('http://renovate.com')).toEqual({
-        authorization: false,
-        body: '',
-        headers: {
-          'x-some-header': 'abc',
-        },
-        statusCode: 200,
-      });
-      expect(httpMock.allUsed()).toBeTrue();
-    } finally {
-      process.env.NODE_ENV = NODE_ENV;
-    }
   });
 
   it('limits concurrency by host', async () => {
@@ -314,18 +297,215 @@ describe('util/http/index', () => {
     expect(res?.body.toString('utf-8')).toBe('test');
   });
 
+  describe('retry', () => {
+    let NODE_ENV: string | undefined;
+
+    beforeAll(() => {
+      NODE_ENV = process.env.NODE_ENV;
+      delete process.env.NODE_ENV;
+      http = new Http('dummy');
+    });
+
+    afterAll(() => {
+      process.env.NODE_ENV = NODE_ENV;
+    });
+
+    it('works', async () => {
+      httpMock
+        .scope(baseUrl)
+        .head('/')
+        .reply(500)
+        .head('/')
+        .reply(200, undefined, { 'x-some-header': 'abc' });
+      expect(await http.head('http://renovate.com')).toEqual({
+        authorization: false,
+        body: '',
+        headers: {
+          'x-some-header': 'abc',
+        },
+        statusCode: 200,
+      });
+      expect(httpMock.allUsed()).toBeTrue();
+    });
+  });
+
   describe('Schema support', () => {
     const SomeSchema = z
       .object({ x: z.number(), y: z.number() })
       .transform(({ x, y }) => `${x} + ${y} = ${x + y}`);
 
     beforeEach(() => {
-      jest.resetAllMocks();
       memCache.init();
     });
 
     afterEach(() => {
       memCache.reset();
+    });
+
+    describe('getPlain', () => {
+      it('gets plain text with correct headers', async () => {
+        httpMock.scope(baseUrl).get('/').reply(200, 'plain text response', {
+          'content-type': 'text/plain',
+        });
+
+        const res = await http.getPlain('http://renovate.com');
+        expect(res.body).toBe('plain text response');
+        expect(res.headers['content-type']).toBe('text/plain');
+      });
+
+      it('works with custom options', async () => {
+        httpMock
+          .scope(baseUrl)
+          .get('/')
+          .matchHeader('custom', 'header')
+          .reply(200, 'plain text response');
+
+        const res = await http.getPlain('http://renovate.com', {
+          headers: { custom: 'header' },
+        });
+        expect(res.body).toBe('plain text response');
+      });
+    });
+
+    describe('getYamlUnchecked', () => {
+      it('parses yaml response without schema', async () => {
+        httpMock.scope(baseUrl).get('/').reply(200, 'x: 2\ny: 2');
+
+        const res = await http.getYamlUnchecked('http://renovate.com');
+        expect(res.body).toEqual({ x: 2, y: 2 });
+      });
+
+      it('parses yaml with options', async () => {
+        httpMock
+          .scope(baseUrl)
+          .get('/')
+          .matchHeader('custom', 'header')
+          .reply(200, 'x: 2\ny: 2');
+
+        const res = await http.getYamlUnchecked('http://renovate.com', {
+          headers: { custom: 'header' },
+        });
+        expect(res.body).toEqual({ x: 2, y: 2 });
+      });
+
+      it('throws on invalid yaml', async () => {
+        httpMock.scope(baseUrl).get('/').reply(200, '!@#$%^');
+
+        await expect(
+          http.getYamlUnchecked('http://renovate.com'),
+        ).rejects.toThrow('Failed to parse YAML file');
+      });
+    });
+
+    describe('getYaml', () => {
+      it('parses yaml with schema validation', async () => {
+        httpMock.scope(baseUrl).get('/').reply(200, 'x: 2\ny: 2');
+
+        const res = await http.getYaml('http://renovate.com', SomeSchema);
+        expect(res.body).toBe('2 + 2 = 4');
+      });
+
+      it('parses yaml with options and schema', async () => {
+        httpMock
+          .scope(baseUrl)
+          .get('/')
+          .matchHeader('custom', 'header')
+          .reply(200, 'x: 2\ny: 2');
+
+        const res = await http.getYaml(
+          'http://renovate.com',
+          { headers: { custom: 'header' } },
+          SomeSchema,
+        );
+        expect(res.body).toBe('2 + 2 = 4');
+      });
+
+      it('throws on schema validation failure', async () => {
+        httpMock.scope(baseUrl).get('/').reply(200, 'foo: bar');
+
+        await expect(
+          http.getYaml('http://renovate.com', SomeSchema),
+        ).rejects.toThrow(z.ZodError);
+      });
+
+      it('throws on invalid yaml', async () => {
+        httpMock.scope(baseUrl).get('/').reply(200, '!@#$%^');
+
+        await expect(
+          http.getYaml('http://renovate.com', SomeSchema),
+        ).rejects.toThrow('Failed to parse YAML file');
+      });
+    });
+
+    describe('getYamlSafe', () => {
+      it('returns successful result with schema validation', async () => {
+        httpMock.scope('http://example.com').get('/').reply(200, 'x: 2\ny: 2');
+
+        const { val, err } = await http
+          .getYamlSafe('http://example.com', SomeSchema)
+          .unwrap();
+
+        expect(val).toBe('2 + 2 = 4');
+        expect(err).toBeUndefined();
+      });
+
+      it('returns schema error result', async () => {
+        httpMock
+          .scope('http://example.com')
+          .get('/')
+          .reply(200, 'x: "2"\ny: "2"');
+
+        const { val, err } = await http
+          .getYamlSafe('http://example.com', SomeSchema)
+          .unwrap();
+
+        expect(val).toBeUndefined();
+        expect(err).toBeInstanceOf(ZodError);
+      });
+
+      it('returns error result for invalid yaml', async () => {
+        httpMock.scope('http://example.com').get('/').reply(200, '!@#$%^');
+
+        const { val, err } = await http
+          .getYamlSafe('http://example.com', SomeSchema)
+          .unwrap();
+
+        expect(val).toBeUndefined();
+        expect(err).toBeDefined();
+      });
+
+      it('returns error result for network errors', async () => {
+        httpMock
+          .scope('http://example.com')
+          .get('/')
+          .replyWithError('network error');
+
+        const { val, err } = await http
+          .getYamlSafe('http://example.com', SomeSchema)
+          .unwrap();
+
+        expect(val).toBeUndefined();
+        expect(err).toBeInstanceOf(HttpError);
+      });
+
+      it('works with options and schema', async () => {
+        httpMock
+          .scope('http://example.com')
+          .get('/')
+          .matchHeader('custom', 'header')
+          .reply(200, 'x: 2\ny: 2');
+
+        const { val, err } = await http
+          .getYamlSafe(
+            'http://example.com',
+            { headers: { custom: 'header' } },
+            SomeSchema,
+          )
+          .unwrap();
+
+        expect(val).toBe('2 + 2 = 4');
+        expect(err).toBeUndefined();
+      });
     });
 
     describe('getJson', () => {
@@ -342,7 +522,7 @@ describe('util/http/index', () => {
         const { body }: HttpResponse<string> = await http.getJson(
           'http://renovate.com',
           { headers: { accept: 'application/json' } },
-          SomeSchema
+          SomeSchema,
         );
 
         expect(body).toBe('2 + 2 = 4');
@@ -360,7 +540,7 @@ describe('util/http/index', () => {
           .reply(200, JSON.stringify({ foo: 'bar' }));
 
         await expect(
-          http.getJson('http://renovate.com', SomeSchema)
+          http.getJson('http://renovate.com', SomeSchema),
         ).rejects.toThrow(z.ZodError);
       });
     });
@@ -415,7 +595,7 @@ describe('util/http/index', () => {
 
         const { body }: HttpResponse<string> = await http.postJson(
           'http://renovate.com',
-          SomeSchema
+          SomeSchema,
         );
 
         expect(body).toBe('2 + 2 = 4');
@@ -429,7 +609,7 @@ describe('util/http/index', () => {
           .reply(200, JSON.stringify({ foo: 'bar' }));
 
         await expect(
-          http.postJson('http://renovate.com', SomeSchema)
+          http.postJson('http://renovate.com', SomeSchema),
         ).rejects.toThrow(z.ZodError);
       });
     });
@@ -464,80 +644,6 @@ describe('util/http/index', () => {
       const t2 = Date.now();
 
       expect(t2 - t1).toBeGreaterThanOrEqual(4000);
-    });
-  });
-
-  describe('Etag caching', () => {
-    it('returns cached data for status=304', async () => {
-      type FooBar = { foo: string; bar: string };
-      const data: FooBar = { foo: 'foo', bar: 'bar' };
-      httpMock
-        .scope(baseUrl, { reqheaders: { 'If-None-Match': 'foobar' } })
-        .get('/foo')
-        .reply(304);
-
-      const res = await http.getJson<FooBar>(`/foo`, {
-        baseUrl,
-        etagCache: {
-          etag: 'foobar',
-          data,
-        },
-      });
-
-      expect(res.statusCode).toBe(304);
-      expect(res.body).toEqual(data);
-      expect(res.body).not.toBe(data);
-    });
-
-    it('bypasses schema parsing', async () => {
-      const FooBar = z
-        .object({ foo: z.string(), bar: z.string() })
-        .transform(({ foo, bar }) => ({
-          foobar: `${foo}${bar}`.toUpperCase(),
-        }));
-      const data = FooBar.parse({ foo: 'foo', bar: 'bar' });
-      httpMock
-        .scope(baseUrl, { reqheaders: { 'If-None-Match': 'foobar' } })
-        .get('/foo')
-        .reply(304);
-
-      const res = await http.getJson(
-        `/foo`,
-        {
-          baseUrl,
-          etagCache: {
-            etag: 'foobar',
-            data,
-          },
-        },
-        FooBar
-      );
-
-      expect(res.statusCode).toBe(304);
-      expect(res.body).toEqual(data);
-      expect(res.body).not.toBe(data);
-    });
-
-    it('returns new data for status=200', async () => {
-      type FooBar = { foo: string; bar: string };
-      const oldData: FooBar = { foo: 'foo', bar: 'bar' };
-      const newData: FooBar = { foo: 'FOO', bar: 'BAR' };
-      httpMock
-        .scope(baseUrl, { reqheaders: { 'If-None-Match': 'foobar' } })
-        .get('/foo')
-        .reply(200, newData);
-
-      const res = await http.getJson<FooBar>(`/foo`, {
-        baseUrl,
-        etagCache: {
-          etag: 'foobar',
-          data: oldData,
-        },
-      });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual(newData);
-      expect(res.body).not.toBe(newData);
     });
   });
 });

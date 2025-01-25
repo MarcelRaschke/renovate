@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // istanbul ignore file
 import 'source-map-support/register';
+import './punycode.cjs';
 import { dequal } from 'dequal';
 import { pathExists, readFile } from 'fs-extra';
 import { configFileNames } from './config/app-strings';
@@ -17,10 +18,11 @@ import {
 let returnVal = 0;
 
 async function validate(
+  configType: 'global' | 'repo',
   desc: string,
   config: RenovateConfig,
   strict: boolean,
-  isPreset = false
+  isPreset = false,
 ): Promise<void> {
   const { isMigrated, migratedConfig } = migrateConfig(config);
   if (isMigrated) {
@@ -29,25 +31,25 @@ async function validate(
         oldConfig: config,
         newConfig: migratedConfig,
       },
-      'Config migration necessary'
+      'Config migration necessary',
     );
     if (strict) {
       returnVal = 1;
     }
   }
   const massagedConfig = massageConfig(migratedConfig);
-  const res = await validateConfig(massagedConfig, isPreset);
+  const res = await validateConfig(configType, massagedConfig, isPreset);
   if (res.errors.length) {
     logger.error(
       { file: desc, errors: res.errors },
-      'Found errors in configuration'
+      'Found errors in configuration',
     );
     returnVal = 1;
   }
   if (res.warnings.length) {
     logger.warn(
       { file: desc, warnings: res.warnings },
-      'Found errors in configuration'
+      'Found errors in configuration',
     );
     returnVal = 1;
   }
@@ -75,7 +77,7 @@ type PackageJson = {
         const parsedContent = await getParsedContent(file);
         try {
           logger.info(`Validating ${file}`);
-          await validate(file, parsedContent, strict);
+          await validate('global', file, parsedContent, strict);
         } catch (err) {
           logger.warn({ file, err }, 'File is not valid Renovate config');
           returnVal = 1;
@@ -87,7 +89,7 @@ type PackageJson = {
     }
   } else {
     for (const file of configFileNames.filter(
-      (name) => name !== 'package.json'
+      (name) => name !== 'package.json',
     )) {
       try {
         if (!(await pathExists(file))) {
@@ -96,7 +98,7 @@ type PackageJson = {
         const parsedContent = await getParsedContent(file);
         try {
           logger.info(`Validating ${file}`);
-          await validate(file, parsedContent, strict);
+          await validate('repo', file, parsedContent, strict);
         } catch (err) {
           logger.warn({ file, err }, 'File is not valid Renovate config');
           returnVal = 1;
@@ -108,24 +110,30 @@ type PackageJson = {
     }
     try {
       const pkgJson = JSON.parse(
-        await readFile('package.json', 'utf8')
+        await readFile('package.json', 'utf8'),
       ) as PackageJson;
       if (pkgJson.renovate) {
         logger.info(`Validating package.json > renovate`);
-        await validate('package.json > renovate', pkgJson.renovate, strict);
+        await validate(
+          'repo',
+          'package.json > renovate',
+          pkgJson.renovate,
+          strict,
+        );
       }
       if (pkgJson['renovate-config']) {
         logger.info(`Validating package.json > renovate-config`);
         for (const presetConfig of Object.values(pkgJson['renovate-config'])) {
           await validate(
+            'repo',
             'package.json > renovate-config',
             presetConfig,
             strict,
-            true
+            true,
           );
         }
       }
-    } catch (err) {
+    } catch {
       // ignore
     }
     try {
@@ -134,13 +142,13 @@ type PackageJson = {
         const file = process.env.RENOVATE_CONFIG_FILE ?? 'config.js';
         logger.info(`Validating ${file}`);
         try {
-          await validate(file, fileConfig, strict);
+          await validate('global', file, fileConfig, strict);
         } catch (err) {
           logger.error({ file, err }, 'File is not valid Renovate config');
           returnVal = 1;
         }
       }
-    } catch (err) {
+    } catch {
       // ignore
     }
   }

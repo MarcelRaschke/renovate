@@ -21,6 +21,11 @@ export const ArrayFragmentSchema = z.object({
   items: LooseArray(PrimitiveFragmentsSchema),
   isComplete: z.boolean(),
 });
+export const StringArrayFragmentSchema = z.object({
+  type: z.literal('array'),
+  items: LooseArray(StringFragmentSchema),
+  isComplete: z.boolean(),
+});
 const ValueFragmentsSchema = z.discriminatedUnion('type', [
   StringFragmentSchema,
   BooleanFragmentSchema,
@@ -37,7 +42,7 @@ export const AttributeFragmentSchema = z.object({
   value: ValueFragmentsSchema.optional(),
   isComplete: z.boolean(),
 });
-const AllFragmentsSchema = z.discriminatedUnion('type', [
+export const AllFragmentsSchema = z.discriminatedUnion('type', [
   ArrayFragmentSchema,
   AttributeFragmentSchema,
   BooleanFragmentSchema,
@@ -73,7 +78,7 @@ export function boolean(value: string | boolean): BooleanFragment {
 
 export function record(
   children: ChildFragments = {},
-  isComplete = false
+  isComplete = false,
 ): RecordFragment {
   return {
     type: 'record',
@@ -85,7 +90,7 @@ export function record(
 export function attribute(
   name: string,
   value?: ValueFragments,
-  isComplete = false
+  isComplete = false,
 ): AttributeFragment {
   return {
     type: 'attribute',
@@ -97,7 +102,7 @@ export function attribute(
 
 export function array(
   items: PrimitiveFragments[] = [],
-  isComplete = false
+  isComplete = false,
 ): ArrayFragment {
   return {
     type: 'array',

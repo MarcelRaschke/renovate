@@ -11,6 +11,14 @@ exports[`modules/manager/pre-commit/extract extractPackageFile() extracts from c
       "packageName": "pre-commit/pre-commit-hooks",
     },
     {
+      "currentValue": "==1.1.1",
+      "currentVersion": "1.1.1",
+      "datasource": "pypi",
+      "depName": "request",
+      "depType": "pre-commit-python",
+      "packageName": "request",
+    },
+    {
       "currentValue": "19.3b0",
       "datasource": "github-tags",
       "depName": "psf/black",
@@ -30,6 +38,26 @@ exports[`modules/manager/pre-commit/extract extractPackageFile() extracts from c
       "depName": "psf/black",
       "depType": "repository",
       "packageName": "psf/black",
+    },
+    {
+      "currentValue": "v42.0",
+      "datasource": "gitlab-tags",
+      "depName": "my/dep",
+      "depType": "repository",
+      "packageName": "my/dep",
+      "registryUrls": [
+        "https://gitlab.mycompany.com",
+      ],
+    },
+    {
+      "currentValue": "v42.0",
+      "datasource": "gitlab-tags",
+      "depName": "my/dep",
+      "depType": "repository",
+      "packageName": "my/dep",
+      "registryUrls": [
+        "https://gitlab.mycompany.com",
+      ],
     },
     {
       "currentValue": "v2.1.2",

@@ -1,5 +1,7 @@
 import type { RenovateConfig } from '../../../../../config/types';
-import { PrDebugData, platform } from '../../../../../modules/platform';
+import type { PrDebugData } from '../../../../../modules/platform';
+import { platform } from '../../../../../modules/platform';
+import { detectPlatform } from '../../../../../util/common';
 import { regEx } from '../../../../../util/regex';
 import { toBase64 } from '../../../../../util/string';
 import * as template from '../../../../../util/template';
@@ -29,9 +31,24 @@ function massageUpdateMetadata(config: BranchConfig): void {
     if (primaryLink) {
       depNameLinked = `[${depNameLinked}](${primaryLink})`;
     }
+
+    let sourceRootPath = 'tree';
+    if (sourceUrl) {
+      const sourcePlatform = detectPlatform(sourceUrl);
+      if (sourcePlatform === 'bitbucket') {
+        sourceRootPath = 'src';
+      }
+    }
+
     const otherLinks = [];
-    if (homepage && sourceUrl) {
-      otherLinks.push(`[source](${sourceUrl})`);
+    if (sourceUrl && (!!sourceDirectory || homepage)) {
+      otherLinks.push(
+        `[source](${
+          sourceDirectory
+            ? joinUrlParts(sourceUrl, sourceRootPath, 'HEAD', sourceDirectory)
+            : sourceUrl
+        })`,
+      );
     }
     if (changelogUrl) {
       otherLinks.push(`[changelog](${changelogUrl})`);
@@ -47,7 +64,12 @@ function massageUpdateMetadata(config: BranchConfig): void {
     if (sourceUrl) {
       let fullUrl = sourceUrl;
       if (sourceDirectory) {
-        fullUrl = joinUrlParts(sourceUrl, 'tree/HEAD/', sourceDirectory);
+        fullUrl = joinUrlParts(
+          sourceUrl,
+          sourceRootPath,
+          'HEAD',
+          sourceDirectory,
+        );
       }
       references.push(`[source](${fullUrl})`);
     }
@@ -69,7 +91,7 @@ const rebasingRegex = regEx(/\*\*Rebasing\*\*: .*/);
 export function getPrBody(
   branchConfig: BranchConfig,
   prBodyConfig: PrBodyConfig,
-  config: RenovateConfig
+  config: RenovateConfig,
 ): string {
   massageUpdateMetadata(branchConfig);
   let warnings = '';
@@ -78,7 +100,7 @@ export function getPrBody(
     warnings += getDepWarningsPR(
       branchConfig.packageFiles,
       config,
-      branchConfig.dependencyDashboard
+      branchConfig.dependencyDashboard,
     );
   }
   const content = {
@@ -105,7 +127,7 @@ export function getPrBody(
     if (prBodyConfig?.rebasingNotice) {
       prBody = prBody.replace(
         rebasingRegex,
-        `**Rebasing**: ${prBodyConfig.rebasingNotice}`
+        `**Rebasing**: ${prBodyConfig.rebasingNotice}`,
       );
     }
   }

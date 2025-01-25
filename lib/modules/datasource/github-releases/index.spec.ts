@@ -1,10 +1,12 @@
+import { mockDeep } from 'jest-mock-extended';
 import { getDigest, getPkgReleases } from '..';
 import { mocked } from '../../../../test/util';
 import * as githubGraphql from '../../../util/github/graphql';
 import * as _hostRules from '../../../util/host-rules';
+import type { Timestamp } from '../../../util/timestamp';
 import { GithubReleasesDatasource } from '.';
 
-jest.mock('../../../util/host-rules');
+jest.mock('../../../util/host-rules', () => mockDeep());
 const hostRules = mocked(_hostRules);
 
 describe('modules/datasource/github-releases/index', () => {
@@ -24,7 +26,7 @@ describe('modules/datasource/github-releases/index', () => {
           name: 'some/dep2',
           description: 'some description',
           version: 'a',
-          releaseTimestamp: '2020-03-09T13:00:00Z',
+          releaseTimestamp: '2020-03-09T13:00:00Z' as Timestamp,
         },
         {
           id: 2,
@@ -32,7 +34,7 @@ describe('modules/datasource/github-releases/index', () => {
           name: 'some/dep2',
           description: 'some description',
           version: 'v',
-          releaseTimestamp: '2020-03-09T12:00:00Z',
+          releaseTimestamp: '2020-03-09T12:00:00Z' as Timestamp,
         },
         {
           id: 3,
@@ -40,7 +42,7 @@ describe('modules/datasource/github-releases/index', () => {
           name: 'some/dep2',
           description: 'some description',
           version: '1.0.0',
-          releaseTimestamp: '2020-03-09T11:00:00Z',
+          releaseTimestamp: '2020-03-09T11:00:00Z' as Timestamp,
         },
         {
           id: 4,
@@ -48,7 +50,7 @@ describe('modules/datasource/github-releases/index', () => {
           name: 'some/dep2',
           description: 'some description',
           version: 'v1.1.0',
-          releaseTimestamp: '2020-03-09T10:00:00Z',
+          releaseTimestamp: '2020-03-09T10:00:00Z' as Timestamp,
         },
         {
           id: 5,
@@ -56,7 +58,7 @@ describe('modules/datasource/github-releases/index', () => {
           name: 'some/dep2',
           description: 'some description',
           version: '2.0.0',
-          releaseTimestamp: '2020-04-09T10:00:00Z',
+          releaseTimestamp: '2020-04-09T10:00:00Z' as Timestamp,
           isStable: false,
         },
       ]);
@@ -69,11 +71,17 @@ describe('modules/datasource/github-releases/index', () => {
       expect(res).toMatchObject({
         registryUrl: 'https://github.com',
         releases: [
-          { releaseTimestamp: '2020-03-09T11:00:00.000Z', version: '1.0.0' },
-          { version: 'v1.1.0', releaseTimestamp: '2020-03-09T10:00:00.000Z' },
+          {
+            releaseTimestamp: '2020-03-09T11:00:00.000Z' as Timestamp,
+            version: '1.0.0',
+          },
+          {
+            version: 'v1.1.0',
+            releaseTimestamp: '2020-03-09T10:00:00.000Z' as Timestamp,
+          },
           {
             version: '2.0.0',
-            releaseTimestamp: '2020-04-09T10:00:00.000Z',
+            releaseTimestamp: '2020-04-09T10:00:00.000Z' as Timestamp,
             isStable: false,
           },
         ],
@@ -94,13 +102,13 @@ describe('modules/datasource/github-releases/index', () => {
         {
           version: 'v1.0.0',
           gitRef: 'v1.0.0',
-          releaseTimestamp: '2021-01-01',
+          releaseTimestamp: '2021-01-01' as Timestamp,
           hash: 'sha-of-v1',
         },
         {
           version: 'v15.0.0',
           gitRef: 'v15.0.0',
-          releaseTimestamp: '2022-10-01',
+          releaseTimestamp: '2022-10-01' as Timestamp,
           hash: 'sha-of-v15',
         },
       ]);
@@ -113,7 +121,7 @@ describe('modules/datasource/github-releases/index', () => {
           packageName,
           currentValue,
         },
-        newValue
+        newValue,
       );
       expect(digest).toBe(newDigest);
     });
@@ -121,7 +129,7 @@ describe('modules/datasource/github-releases/index', () => {
     it('should be independent of the current value', async () => {
       const digest = await getDigest(
         { datasource: GithubReleasesDatasource.id, packageName },
-        newValue
+        newValue,
       );
       expect(digest).toBe(newDigest);
     });
@@ -134,7 +142,7 @@ describe('modules/datasource/github-releases/index', () => {
           currentValue,
           currentDigest,
         },
-        newValue
+        newValue,
       );
       expect(digest).toEqual(newDigest);
     });
@@ -147,7 +155,7 @@ describe('modules/datasource/github-releases/index', () => {
           currentValue,
           currentDigest,
         },
-        'unknown-tag'
+        'unknown-tag',
       );
       expect(digest).toBeNull();
     });

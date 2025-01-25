@@ -1,3 +1,4 @@
+import cronstrue from 'cronstrue';
 import type { RenovateConfig } from '../../../../config/types';
 import * as schedule from './schedule';
 
@@ -13,10 +14,6 @@ describe('workers/repository/update/branch/schedule', () => {
   });
 
   describe('hasValidSchedule(schedule)', () => {
-    beforeEach(() => {
-      jest.resetAllMocks();
-    });
-
     it('returns true for null', () => {
       expect(schedule.hasValidSchedule(null)[0]).toBeTrue();
     });
@@ -35,7 +32,7 @@ describe('workers/repository/update/branch/schedule', () => {
 
     it('returns false if using minutes', () => {
       expect(
-        schedule.hasValidSchedule(['every 15 mins every weekday'])[0]
+        schedule.hasValidSchedule(['every 15 mins every weekday'])[0],
       ).toBeFalse();
     });
 
@@ -53,7 +50,7 @@ describe('workers/repository/update/branch/schedule', () => {
 
     it('returns false if any schedule has no days or time range', () => {
       expect(schedule.hasValidSchedule(['at 5:00pm', 'on saturday'])[0]).toBe(
-        false
+        false,
       );
     });
 
@@ -63,13 +60,15 @@ describe('workers/repository/update/branch/schedule', () => {
 
     it('returns true if schedule has days of week', () => {
       expect(schedule.hasValidSchedule(['on friday and saturday'])[0]).toBe(
-        true
+        true,
       );
     });
 
     it('returns true for multi day schedules', () => {
       expect(
-        schedule.hasValidSchedule(['after 5:00pm on wednesday and thursday'])[0]
+        schedule.hasValidSchedule([
+          'after 5:00pm on wednesday and thursday',
+        ])[0],
       ).toBeTrue();
     });
 
@@ -79,7 +78,7 @@ describe('workers/repository/update/branch/schedule', () => {
 
     it('returns true for first day of the month', () => {
       expect(
-        schedule.hasValidSchedule(['on the first day of the month'])[0]
+        schedule.hasValidSchedule(['on the first day of the month'])[0],
       ).toBeTrue();
     });
 
@@ -95,7 +94,7 @@ describe('workers/repository/update/branch/schedule', () => {
 
     it('returns true if schedule has a start and end time', () => {
       expect(
-        schedule.hasValidSchedule(['after 11:00pm and before 6:00am'])[0]
+        schedule.hasValidSchedule(['after 11:00pm and before 6:00am'])[0],
       ).toBeTrue();
     });
 
@@ -103,21 +102,23 @@ describe('workers/repository/update/branch/schedule', () => {
       expect(
         schedule.hasValidSchedule([
           'after 11:00pm and before 6:00am every weekday',
-        ])[0]
+        ])[0],
       ).toBeTrue();
     });
 
     it('returns true if schedule uses cron syntax', () => {
       expect(schedule.hasValidSchedule(['* 5 * * *'])[0]).toBeTrue();
       expect(schedule.hasValidSchedule(['* * * * * 6L'])[0]).toBeTrue();
-      expect(schedule.hasValidSchedule(['* * */2 6#1'])[0]).toBeTrue();
+      expect(schedule.hasValidSchedule(['* * * */2 6#1'])[0]).toBeTrue();
+      expect(schedule.hasValidSchedule(['2 3 5 11 *'])[0]).toBeFalse();
+      expect(schedule.hasValidSchedule(['2 3 5 11'])[0]).toBeFalse();
     });
 
     it('massages schedules', () => {
       expect(
         schedule.hasValidSchedule([
           'before 5am on the first day of the month',
-        ])[0]
+        ])[0],
       ).toBeTrue();
       expect(schedule.hasValidSchedule(['every month'])[0]).toBeTrue();
     });
@@ -146,7 +147,7 @@ describe('workers/repository/update/branch/schedule', () => {
 
     beforeEach(() => {
       jest.setSystemTime(new Date('2017-06-30T10:50:00.000')); // Locally 2017-06-30 10:50am
-      jest.resetAllMocks();
+
       config = {};
     });
 
@@ -268,6 +269,52 @@ describe('workers/repository/update/branch/schedule', () => {
       });
     });
 
+    describe('supports L syntax in cron schedules', () => {
+      beforeEach(() => {
+        jest.setSystemTime(new Date('2024-10-31T10:50:00.000'));
+      });
+
+      it('supports last day of month', () => {
+        config.schedule = ['* * * L *'];
+        const res = schedule.isScheduledNow(config);
+        expect(res).toBeTrue();
+      });
+
+      it('supports last day of week', () => {
+        config.schedule = ['* * * * 4L'];
+        expect(schedule.isScheduledNow(config)).toBeTrue();
+
+        config.schedule = ['* * * * 5L'];
+        expect(schedule.isScheduledNow(config)).toBeFalse();
+      });
+    });
+
+    describe('supports # syntax in cron schedules', () => {
+      it('supports first Monday of month', () => {
+        jest.setSystemTime(new Date('2024-10-07T10:50:00.000'));
+        config.schedule = ['* * * * 1#1'];
+        expect(schedule.isScheduledNow(config)).toBeTrue();
+        config.schedule = ['* * * * 1#2'];
+        expect(schedule.isScheduledNow(config)).toBeFalse();
+      });
+    });
+
+    describe('handles schedule with Day Of Month and Day Of Week using AND logic', () => {
+      it.each`
+        datetime                     | expected
+        ${'2017-06-01T01:00:00.000'} | ${true}
+        ${'2017-06-15T01:01:00.000'} | ${true}
+        ${'2017-06-16T03:00:00.000'} | ${false}
+        ${'2017-06-04T04:01:00.000'} | ${false}
+        ${'2017-06-08T04:01:00.000'} | ${false}
+        ${'2017-06-29T04:01:00.000'} | ${false}
+      `('$sched, $tz, $datetime', ({ datetime, expected }) => {
+        config.schedule = ['* 0-5 1-7,15-22 * 4'];
+        jest.setSystemTime(new Date(datetime));
+        expect(schedule.isScheduledNow(config)).toBe(expected);
+      });
+    });
+
     describe('supports timezone', () => {
       it.each`
         sched                     | tz                  | datetime                          | expected
@@ -275,12 +322,34 @@ describe('workers/repository/update/branch/schedule', () => {
         ${'after 4pm'}            | ${'Asia/Singapore'} | ${'2017-06-30T16:01:00.000+0800'} | ${true}
         ${'before 4am on Monday'} | ${'Asia/Tokyo'}     | ${'2017-06-26T03:59:00.000+0900'} | ${true}
         ${'before 4am on Monday'} | ${'Asia/Tokyo'}     | ${'2017-06-26T04:01:00.000+0900'} | ${false}
+        ${'* 16-23 * * *'}        | ${'Asia/Singapore'} | ${'2017-06-30T15:59:00.000+0800'} | ${false}
+        ${'* 16-23 * * *'}        | ${'Asia/Singapore'} | ${'2017-06-30T16:01:00.000+0800'} | ${true}
+        ${'* 0-3 * * 1'}          | ${'Asia/Tokyo'}     | ${'2017-06-26T03:58:00.000+0900'} | ${true}
+        ${'* 0-3 * * 1'}          | ${'Asia/Tokyo'}     | ${'2017-06-26T04:01:00.000+0900'} | ${false}
       `('$sched, $tz, $datetime', ({ sched, tz, datetime, expected }) => {
         config.schedule = [sched];
         config.timezone = tz;
         jest.setSystemTime(new Date(datetime));
         expect(schedule.isScheduledNow(config)).toBe(expected);
       });
+    });
+
+    it('reject if day mismatch', () => {
+      config.schedule = ['* 10 21 * *'];
+      const res = schedule.isScheduledNow(config);
+      expect(res).toBeFalse();
+    });
+
+    it('reject if month mismatch', () => {
+      config.schedule = ['* 10 30 1 *'];
+      const res = schedule.isScheduledNow(config);
+      expect(res).toBeFalse();
+    });
+
+    it('reject if no schedule available', () => {
+      config.schedule = ['* * * 1 *'];
+      const res = schedule.isScheduledNow(config);
+      expect(res).toBeFalse();
     });
 
     it('supports multiple schedules', () => {
@@ -407,6 +476,33 @@ describe('workers/repository/update/branch/schedule', () => {
         jest.setSystemTime(new Date(datetime));
         expect(schedule.isScheduledNow(config)).toBe(expected);
       });
+    });
+  });
+
+  describe('log cron schedules', () => {
+    it('should correctly convert "* 22 4 * *" to human-readable format', () => {
+      const result = cronstrue.toString('* 22 4 * *');
+      expect(result).toBe(
+        'Every minute, between 10:00 PM and 10:59 PM, on day 4 of the month',
+      );
+    });
+
+    it('should correctly convert "* */2 * * *" to human-readable format', () => {
+      const result = cronstrue.toString('* */2 * * *');
+      expect(result).toBe('Every minute, every 2 hours');
+    });
+
+    it('should correctly convert "* 23 * * *" to human-readable format', () => {
+      const result = cronstrue.toString('* 23 * * *');
+      expect(result).toBe('Every minute, between 11:00 PM and 11:59 PM');
+    });
+
+    it('should not throw an error for an invalid cron expression "* * */2 6#1"', () => {
+      expect(() => {
+        cronstrue.toString('* * */2 6#1', {
+          throwExceptionOnParseError: false,
+        });
+      }).not.toThrow();
     });
   });
 });

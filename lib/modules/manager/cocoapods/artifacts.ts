@@ -66,12 +66,13 @@ export async function updateArtifacts({
   }
 
   const match = regEx(/^COCOAPODS: (?<cocoapodsVersion>.*)$/m).exec(
-    existingLockFileContent
+    existingLockFileContent,
   );
   const cocoapods = match?.groups?.cocoapodsVersion ?? null;
 
   const cmd = [...getPluginCommands(newPackageFileContent), 'pod install'];
   const execOptions: ExecOptions = {
+    userConfiguredEnv: config.env,
     cwdFile: packageFileName,
     extraEnv: {
       CP_HOME_DIR: await ensureCacheDir('cocoapods'),

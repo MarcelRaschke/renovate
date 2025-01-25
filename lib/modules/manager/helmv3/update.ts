@@ -1,4 +1,5 @@
-import semver, { ReleaseType } from 'semver';
+import type { ReleaseType } from 'semver';
+import semver from 'semver';
 import { logger } from '../../../logger';
 import { regEx } from '../../../util/regex';
 import type { BumpPackageVersionResult } from '../types';
@@ -6,11 +7,11 @@ import type { BumpPackageVersionResult } from '../types';
 export function bumpPackageVersion(
   content: string,
   currentValue: string,
-  bumpVersion: ReleaseType
+  bumpVersion: ReleaseType,
 ): BumpPackageVersionResult {
   logger.debug(
     { bumpVersion, currentValue },
-    'Checking if we should bump Chart.yaml version'
+    'Checking if we should bump Chart.yaml version',
   );
   let newChartVersion: string | null;
   let bumpedContent = content;
@@ -23,21 +24,21 @@ export function bumpPackageVersion(
     logger.debug(`newChartVersion: ${newChartVersion}`);
     bumpedContent = content.replace(
       regEx(`^(?<version>version:\\s*).*$`, 'm'),
-      `$<version>${newChartVersion}`
+      `$<version>${newChartVersion}`,
     );
     if (bumpedContent === content) {
       logger.debug('Version was already bumped');
     } else {
       logger.debug('Bumped Chart.yaml version');
     }
-  } catch (err) {
+  } catch {
     logger.warn(
       {
         content,
         currentValue,
         bumpVersion,
       },
-      'Failed to bumpVersion'
+      'Failed to bumpVersion',
     );
   }
   return { bumpedContent };

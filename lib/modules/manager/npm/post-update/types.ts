@@ -6,7 +6,6 @@ export interface DetermineLockFileDirsResult {
   yarnLockDirs: string[];
   npmLockDirs: string[];
   pnpmShrinkwrapDirs: string[];
-  lernaJsonFiles: string[];
 }
 
 export interface AdditionalPackageFiles {
@@ -42,6 +41,13 @@ export interface PnpmLockFile {
   optionalDependencies: PnpmDependencySchema;
 }
 
+export interface YarnRcNpmRegistry {
+  npmAlwaysAuth?: boolean;
+  npmAuthIdent?: string;
+  npmAuthToken?: string;
+}
+
 export interface YarnRcYmlFile {
   yarnPath?: string | null;
+  npmRegistries: Record<string, YarnRcNpmRegistry>;
 }

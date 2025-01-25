@@ -4,14 +4,27 @@ describe('util/package-rules/package-names', () => {
   const packageNameMatcher = new PackageNameMatcher();
 
   describe('match', () => {
-    it('should return false if packageFile is not defined', () => {
+    it('should return false if packageName is not defined', () => {
       const result = packageNameMatcher.matches(
         {
-          depName: undefined,
+          packageName: undefined,
         },
         {
           matchPackageNames: ['@opentelemetry/http'],
-        }
+        },
+      );
+      expect(result).toBeFalse();
+    });
+
+    it('should return false if not matching', () => {
+      const result = packageNameMatcher.matches(
+        {
+          depName: 'abc',
+          packageName: 'def',
+        },
+        {
+          matchPackageNames: ['ghi'],
+        },
       );
       expect(result).toBeFalse();
     });
@@ -19,41 +32,25 @@ describe('util/package-rules/package-names', () => {
     it('should matchPackageName', () => {
       const result = packageNameMatcher.matches(
         {
-          depName: 'abc',
           packageName: 'def',
         },
         {
-          matchPackageNames: ['def'],
-        }
+          matchPackageNames: ['def', 'ghi'],
+        },
       );
       expect(result).toBeTrue();
     });
 
-    it('should fall back to matching depName', () => {
+    it('should match pattern', () => {
       const result = packageNameMatcher.matches(
         {
-          depName: 'abc',
-          packageName: 'def',
+          packageName: 'b',
         },
         {
-          matchPackageNames: ['abc'],
-        }
+          matchPackageNames: ['/b/'],
+        },
       );
       expect(result).toBeTrue();
-    });
-  });
-
-  describe('exclude', () => {
-    it('should return false if packageFile is not defined', () => {
-      const result = packageNameMatcher.excludes(
-        {
-          depName: undefined,
-        },
-        {
-          excludePackageNames: ['@opentelemetry/http'],
-        }
-      );
-      expect(result).toBeFalse();
     });
   });
 });

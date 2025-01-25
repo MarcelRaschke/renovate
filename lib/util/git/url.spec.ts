@@ -1,7 +1,8 @@
+import { mockDeep } from 'jest-mock-extended';
 import { hostRules } from '../../../test/util';
 import { getHttpUrl, getRemoteUrlWithToken, parseGitUrl } from './url';
 
-jest.mock('../host-rules');
+jest.mock('../host-rules', () => mockDeep());
 
 describe('util/git/url', () => {
   describe('parseGitUrl', () => {
@@ -48,41 +49,74 @@ describe('util/git/url', () => {
       expect(getHttpUrl('http://foo.bar/')).toBe('http://foo.bar/');
     });
 
+    it('returns http url for ssh url with port', () => {
+      expect(
+        getHttpUrl(
+          'ssh://git@gitlab.example.com:22222/typo3-extensions/poll-pro.git',
+        ),
+      ).toBe('https://gitlab.example.com/typo3-extensions/poll-pro.git');
+    });
+
     it('returns gitlab url with token', () => {
       expect(getHttpUrl('http://gitlab.com/', 'token')).toBe(
-        'http://gitlab-ci-token:token@gitlab.com/'
+        'http://gitlab-ci-token:token@gitlab.com/',
       );
       expect(getHttpUrl('http://gitlab.com/', 'gitlab-ci-token:token')).toBe(
-        'http://gitlab-ci-token:token@gitlab.com/'
+        'http://gitlab-ci-token:token@gitlab.com/',
       );
       expect(
-        getHttpUrl('http://gitlab.com:8443/', 'gitlab-ci-token:token')
+        getHttpUrl('http://gitlab.com:8443/', 'gitlab-ci-token:token'),
       ).toBe('http://gitlab-ci-token:token@gitlab.com:8443/');
       expect(getHttpUrl('git@gitlab.com:some/repo', 'token')).toBe(
-        'https://gitlab-ci-token:token@gitlab.com/some/repo'
+        'https://gitlab-ci-token:token@gitlab.com/some/repo',
       );
     });
 
     it('returns github url with token', () => {
       expect(getHttpUrl('http://github.com/', 'token')).toBe(
-        'http://x-access-token:token@github.com/'
+        'http://x-access-token:token@github.com/',
       );
       expect(getHttpUrl('http://github.com/', 'x-access-token:token')).toBe(
-        'http://x-access-token:token@github.com/'
+        'http://x-access-token:token@github.com/',
       );
       expect(
-        getHttpUrl('http://github.com:8443/', 'x-access-token:token')
+        getHttpUrl('http://github.com:8443/', 'x-access-token:token'),
       ).toBe('http://x-access-token:token@github.com:8443/');
       expect(getHttpUrl('git@github.com:some/repo', 'token')).toBe(
-        'https://x-access-token:token@github.com/some/repo'
+        'https://x-access-token:token@github.com/some/repo',
       );
+    });
+
+    it('returns bitbucket-server url', () => {
+      expect(getHttpUrl('http://git.mycompany.com/scm/proj/repo.git')).toBe(
+        'http://git.mycompany.com/scm/proj/repo.git',
+      );
+      hostRules.hostType.mockReturnValueOnce('bitbucket-server');
+      expect(getHttpUrl('ssh://git@git.mycompany.com:7999/proj/repo.git')).toBe(
+        'https://git.mycompany.com/scm/proj/repo.git',
+      );
+    });
+
+    it('removes username/password from URL', () => {
+      expect(getHttpUrl('https://user:password@foo.bar/someOrg/someRepo')).toBe(
+        'https://foo.bar/someOrg/someRepo',
+      );
+    });
+
+    it('replaces username/password with given token', () => {
+      expect(
+        getHttpUrl(
+          'https://user:password@foo.bar/someOrg/someRepo',
+          'another-user:a-secret-pwd',
+        ),
+      ).toBe('https://another-user:a-secret-pwd@foo.bar/someOrg/someRepo');
     });
   });
 
   describe('getRemoteUrlWithToken()', () => {
     it('returns original url if no host rule is found', () => {
       expect(getRemoteUrlWithToken('https://foo.bar/')).toBe(
-        'https://foo.bar/'
+        'https://foo.bar/',
       );
     });
 
@@ -91,7 +125,7 @@ describe('util/git/url', () => {
       expect(hostRules.find).toHaveBeenLastCalledWith(
         expect.objectContaining({
           url: 'https://foo.bar/some/repo',
-        })
+        }),
       );
     });
 
@@ -100,35 +134,35 @@ describe('util/git/url', () => {
       expect(hostRules.find).toHaveBeenLastCalledWith(
         expect.objectContaining({
           url: 'abcdefg',
-        })
+        }),
       );
     });
 
     it('returns http url with token', () => {
       hostRules.find.mockReturnValueOnce({ token: 'token' });
       expect(getRemoteUrlWithToken('http://foo.bar/')).toBe(
-        'http://token@foo.bar/'
+        'http://token@foo.bar/',
       );
     });
 
     it('returns https url with token', () => {
       hostRules.find.mockReturnValueOnce({ token: 'token' });
       expect(getRemoteUrlWithToken('https://foo.bar/')).toBe(
-        'https://token@foo.bar/'
+        'https://token@foo.bar/',
       );
     });
 
     it('returns https url with token for non-http protocols', () => {
       hostRules.find.mockReturnValueOnce({ token: 'token' });
       expect(getRemoteUrlWithToken('ssh://foo.bar/')).toBe(
-        'https://token@foo.bar/'
+        'https://token@foo.bar/',
       );
     });
 
     it('returns https url with encoded token', () => {
       hostRules.find.mockReturnValueOnce({ token: 't#ken' });
       expect(getRemoteUrlWithToken('https://foo.bar/')).toBe(
-        'https://t%23ken@foo.bar/'
+        'https://t%23ken@foo.bar/',
       );
     });
 
@@ -138,7 +172,7 @@ describe('util/git/url', () => {
         password: 'pass',
       });
       expect(getRemoteUrlWithToken('http://foo.bar/')).toBe(
-        'http://user:pass@foo.bar/'
+        'http://user:pass@foo.bar/',
       );
     });
 
@@ -148,7 +182,7 @@ describe('util/git/url', () => {
         password: 'pass',
       });
       expect(getRemoteUrlWithToken('https://foo.bar/')).toBe(
-        'https://user:pass@foo.bar/'
+        'https://user:pass@foo.bar/',
       );
     });
 
@@ -158,7 +192,7 @@ describe('util/git/url', () => {
         password: 'pass',
       });
       expect(getRemoteUrlWithToken('ssh://foo.bar/')).toBe(
-        'https://user:pass@foo.bar/'
+        'https://user:pass@foo.bar/',
       );
     });
 
@@ -168,7 +202,7 @@ describe('util/git/url', () => {
         password: 'p@ss',
       });
       expect(getRemoteUrlWithToken('https://foo.bar/')).toBe(
-        'https://u%24er:p%40ss@foo.bar/'
+        'https://u%24er:p%40ss@foo.bar/',
       );
     });
 
@@ -177,7 +211,7 @@ describe('util/git/url', () => {
         token: 'token',
       });
       expect(getRemoteUrlWithToken('ssh://gitlab.com/some/repo.git')).toBe(
-        'https://gitlab-ci-token:token@gitlab.com/some/repo.git'
+        'https://gitlab-ci-token:token@gitlab.com/some/repo.git',
       );
     });
 
@@ -186,7 +220,7 @@ describe('util/git/url', () => {
         token: 'token',
       });
       expect(getRemoteUrlWithToken('ssh://github.com/some/repo.git')).toBe(
-        'https://x-access-token:token@github.com/some/repo.git'
+        'https://x-access-token:token@github.com/some/repo.git',
       );
     });
   });

@@ -1,7 +1,7 @@
 import is from '@sindresorhus/is';
-import { loadAll } from 'js-yaml';
 import { logger } from '../../../logger';
 import { newlineRegex, regEx } from '../../../util/regex';
+import { parseYaml } from '../../../util/yaml';
 import {
   KubernetesApiDatasource,
   supportedApis,
@@ -18,7 +18,7 @@ import type { KubernetesConfiguration } from './types';
 export function extractPackageFile(
   content: string,
   packageFile: string,
-  config: ExtractConfig
+  config: ExtractConfig,
 ): PackageFileContent | null {
   logger.trace('kubernetes.extractPackageFile()');
 
@@ -37,14 +37,22 @@ export function extractPackageFile(
   return deps.length ? { deps } : null;
 }
 
+// Comes from https://github.com/distribution/reference/blob/v0.6.0/regexp.go
+// Extracted & converted with https://go.dev/play/p/ZwF3vvRD9Rs
+const dockerImageRegexPattern = `((?:(?:(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])(?:\\.(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]))*|\\[(?:[a-fA-F0-9:]+)\\])(?::[0-9]+)?/)?[a-z0-9]+(?:(?:[._]|__|[-]+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|[-]+)[a-z0-9]+)*)*)(?::([A-Za-z0-9][A-Za-z0-9.-]{0,127}))?(?:@([A-Za-z][A-Za-z0-9]*(?:[-_+.][A-Za-z][A-Za-z0-9]*)*[:][0-9a-fA-F]{32,}))?`;
+
+const k8sImageRegex = regEx(
+  `^\\s*-?\\s*image:\\s*['"]?(${dockerImageRegexPattern})['"]?\\s*`,
+);
+
 function extractImages(
   content: string,
-  config: ExtractConfig
+  config: ExtractConfig,
 ): PackageDependency[] {
   const deps: PackageDependency[] = [];
 
   for (const line of content.split(newlineRegex)) {
-    const match = regEx(/^\s*-?\s*image:\s*['"]?([^\s'"]+)['"]?\s*/).exec(line);
+    const match = k8sImageRegex.exec(line);
     if (match) {
       const currentFrom = match[1];
       const dep = getDep(currentFrom, true, config.registryAliases);
@@ -54,23 +62,26 @@ function extractImages(
           currentValue: dep.currentValue,
           currentDigest: dep.currentDigest,
         },
-        'Kubernetes image'
+        'Kubernetes image',
       );
       deps.push(dep);
     }
   }
 
-  return deps.filter((dep) => !dep.currentValue?.includes('${'));
+  return deps;
 }
 
 function extractApis(
   content: string,
-  packageFile: string
+  packageFile: string,
 ): PackageDependency[] {
   let doc: KubernetesConfiguration[];
 
   try {
-    doc = loadAll(content) as KubernetesConfiguration[];
+    // TODO: use schema (#9610)
+    doc = parseYaml(content, {
+      removeTemplates: true,
+    });
   } catch (err) {
     logger.debug({ err, packageFile }, 'Failed to parse Kubernetes manifest.');
     return [];
@@ -81,7 +92,7 @@ function extractApis(
     .filter(
       (m) =>
         is.nonEmptyStringAndNotWhitespace(m.kind) &&
-        is.nonEmptyStringAndNotWhitespace(m.apiVersion)
+        is.nonEmptyStringAndNotWhitespace(m.apiVersion),
     )
     .filter((m) => supportedApis.has(m.kind))
     .map((configuration) => ({

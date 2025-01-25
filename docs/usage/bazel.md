@@ -36,16 +36,12 @@ Renovate:
 In this example, there is a `.bazelrc` file which imports another file called `.registry.bazelrc`.
 Both files have `--registry` values:
 
-```
-# -------------
-# .bazelrc File
-# -------------
+```title=".bazelrc"
 import .registry.bazelrc
 build --registry=https://raw.githubusercontent.com/bazelbuild/bazel-central-registry/main
+```
 
-# ----------------------
-# .registry.bazelrc File
-# ----------------------
+```title=".registry.bazelrc"
 build --registry=https://example.com/custom_registry
 ```
 
@@ -58,10 +54,7 @@ The final registry list is:
 
 In this example, a `.bazelrc` file has registry values with and without a configuration:
 
-```
-# -------------
-# .bazelrc File
-# -------------
+```title=".bazelrc"
 build:ci --registry=https://internal.server/custom_registry
 build --registry=https://raw.githubusercontent.com/bazelbuild/bazel-central-registry/main
 ```
@@ -152,18 +145,35 @@ archive_override(
 Renovate ignores [`multiple_version_override`](https://bazel.build/rules/lib/globals/module#multiple_version_override).
 `multiple_version_override` does not affect the processing of version updates for a module.
 
+### `git_repository`
+
+If Renovate finds a [`git_repository`](https://bazel.build/rules/lib/repo/git#git_repository), it evaluates the `commit` value at the specified `remote`.
+`remote` is limited to github repos: `https://github.com/<owner>/<repo>.git`
+
+```python
+git_repository(
+    name = "rules_foo",
+    remote = "https://github.com/fooexample/rules_foo.git",
+    commit = "8c94e11c2b05b6f25ced5f23cd07d0cfd36edc1a",
+)
+```
+
 ## Legacy `WORKSPACE` files
 
-Renovate extracts dependencies from:
+Renovate extracts dependencies from the following repository rules:
 
 - `container_pull`
 - `oci_pull`
 - `git_repository`
 - `go_repository`
 - `maven_install`
-- `http_archive` or `http_file` declarations
+- `http_archive`
+- `http_file`
 
-### `git_repository`
+It also recognizes when these repository rule names are prefixed with an underscore.
+For example, `_http_archive` is treated the same as `http_archive`.
+
+### `git_repository` (legacy)
 
 Renovate updates any `git_repository` declaration that has the following:
 

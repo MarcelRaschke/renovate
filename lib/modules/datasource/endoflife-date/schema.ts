@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import { z } from 'zod';
 import { UtcDate } from '../../../util/schema-utils';
+import { MaybeTimestamp } from '../../../util/timestamp';
 import type { Release } from '../types';
 
 const ExpireableField = z.union([
@@ -15,7 +16,7 @@ export const EndoflifeDateVersions = z
   .object({
     cycle: z.string(),
     latest: z.optional(z.string()),
-    releaseDate: z.optional(z.string()),
+    releaseDate: MaybeTimestamp,
     eol: z.optional(ExpireableField),
     discontinued: z.optional(ExpireableField),
   })
@@ -30,6 +31,6 @@ export const EndoflifeDateVersions = z
       const version = latest ?? cycle;
       const isDeprecated = eol === true || discontinued === true;
       return { version, releaseTimestamp, isDeprecated };
-    }
+    },
   )
   .array();

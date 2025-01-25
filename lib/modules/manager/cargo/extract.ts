@@ -1,19 +1,23 @@
-import { parse } from '@iarna/toml';
+import is from '@sindresorhus/is';
 import { logger } from '../../../logger';
-import type { SkipReason } from '../../../types';
+import { coerceArray } from '../../../util/array';
 import { findLocalSiblingOrParent, readLocalFile } from '../../../util/fs';
-import { CrateDatasource } from '../../datasource/crate';
+import { api as versioning } from '../../versioning/cargo';
 import type {
   ExtractConfig,
   PackageDependency,
   PackageFileContent,
 } from '../types';
+import { extractLockFileVersions } from './locked-version';
+import {
+  type CargoConfig,
+  CargoConfigSchema,
+  CargoManifestSchema,
+} from './schema';
 import type {
-  CargoConfig,
-  CargoManifest,
+  CargoManagerData,
   CargoRegistries,
   CargoRegistryUrl,
-  CargoSection,
 } from './types';
 import { DEFAULT_REGISTRY_URL } from './utils';
 
@@ -25,75 +29,32 @@ function getCargoIndexEnv(registryName: string): string | null {
 }
 
 function extractFromSection(
-  parsedContent: CargoSection,
-  section: keyof CargoSection,
+  dependencies: PackageDependency<CargoManagerData>[] | undefined,
   cargoRegistries: CargoRegistries,
   target?: string,
-  depTypeOverride?: string
 ): PackageDependency[] {
-  const deps: PackageDependency[] = [];
-  const sectionContent = parsedContent[section];
-  if (!sectionContent) {
+  if (!dependencies) {
     return [];
   }
-  Object.keys(sectionContent).forEach((depName) => {
-    let skipReason: SkipReason | undefined;
-    let currentValue = sectionContent[depName];
-    let nestedVersion = false;
+
+  const deps: PackageDependency<CargoManagerData>[] = [];
+
+  for (const dep of Object.values(dependencies)) {
     let registryUrls: string[] | undefined;
-    let packageName: string | undefined;
 
-    if (typeof currentValue !== 'string') {
-      const version = currentValue.version;
-      const path = currentValue.path;
-      const git = currentValue.git;
-      const registryName = currentValue.registry;
-      const workspace = currentValue.workspace;
-
-      packageName = currentValue.package;
-
-      if (version) {
-        currentValue = version;
-        nestedVersion = true;
-        if (registryName) {
-          const registryUrl =
-            getCargoIndexEnv(registryName) ?? cargoRegistries[registryName];
-
-          if (registryUrl) {
-            if (registryUrl !== DEFAULT_REGISTRY_URL) {
-              registryUrls = [registryUrl];
-            }
-          } else {
-            skipReason = 'unknown-registry';
-          }
+    if (dep.managerData?.registryName) {
+      const registryUrl =
+        getCargoIndexEnv(dep.managerData.registryName) ??
+        cargoRegistries[dep.managerData?.registryName];
+      if (registryUrl) {
+        if (registryUrl !== DEFAULT_REGISTRY_URL) {
+          registryUrls = [registryUrl];
         }
-        if (path) {
-          skipReason = 'path-dependency';
-        }
-        if (git) {
-          skipReason = 'git-dependency';
-        }
-      } else if (path) {
-        currentValue = '';
-        skipReason = 'path-dependency';
-      } else if (git) {
-        currentValue = '';
-        skipReason = 'git-dependency';
-      } else if (workspace) {
-        currentValue = '';
-        skipReason = 'inherited-dependency';
       } else {
-        currentValue = '';
-        skipReason = 'invalid-dependency-specification';
+        dep.skipReason = 'unknown-registry';
       }
     }
-    const dep: PackageDependency = {
-      depName,
-      depType: section,
-      currentValue: currentValue as any,
-      managerData: { nestedVersion },
-      datasource: CrateDatasource.id,
-    };
+
     if (registryUrls) {
       dep.registryUrls = registryUrls;
     } else {
@@ -105,24 +66,16 @@ function extractFromSection(
       } else {
         // we always expect to have DEFAULT_REGISTRY_ID set, if it's not it means the config defines an alternative
         // registry that we couldn't resolve.
-        skipReason = 'unknown-registry';
+        dep.skipReason = 'unknown-registry';
       }
     }
 
-    if (skipReason) {
-      dep.skipReason = skipReason;
-    }
     if (target) {
       dep.target = target;
     }
-    if (packageName) {
-      dep.packageName = packageName;
-    }
-    if (depTypeOverride) {
-      dep.depType = depTypeOverride;
-    }
     deps.push(dep);
-  });
+  }
+
   return deps;
 }
 
@@ -132,12 +85,15 @@ async function readCargoConfig(): Promise<CargoConfig | null> {
     const path = `.cargo/${configName}`;
     const payload = await readLocalFile(path, 'utf8');
     if (payload) {
-      try {
-        return parse(payload) as CargoConfig;
-      } catch (err) {
-        logger.debug({ err }, `Error parsing ${path}`);
+      const parsedCargoConfig = CargoConfigSchema.safeParse(payload);
+      if (parsedCargoConfig.success) {
+        return parsedCargoConfig.data;
+      } else {
+        logger.debug(
+          { err: parsedCargoConfig.error, path },
+          `Error parsing cargo config`,
+        );
       }
-      break;
     }
   }
 
@@ -151,7 +107,7 @@ function extractCargoRegistries(config: CargoConfig): CargoRegistries {
   // check if we're overriding our default registry index
   result[DEFAULT_REGISTRY_ID] = resolveRegistryIndex(
     DEFAULT_REGISTRY_ID,
-    config
+    config,
   );
 
   const registryNames = new Set([
@@ -168,24 +124,32 @@ function extractCargoRegistries(config: CargoConfig): CargoRegistries {
 function resolveRegistryIndex(
   registryName: string,
   config: CargoConfig,
-  originalNames: Set<string> = new Set()
+  originalNames: Set<string> = new Set(),
 ): CargoRegistryUrl {
   // if we have a source replacement, follow that.
   // https://doc.rust-lang.org/cargo/reference/source-replacement.html
   const replacementName = config.source?.[registryName]?.['replace-with'];
   if (replacementName) {
     logger.debug(
-      `Replacing index of cargo registry ${registryName} with ${replacementName}`
+      `Replacing index of cargo registry ${registryName} with ${replacementName}`,
     );
     if (originalNames.has(replacementName)) {
-      logger.warn(`${registryName} cargo registry resolves to itself`);
+      logger.warn({ registryName }, 'cargo registry resolves to itself');
       return null;
     }
     return resolveRegistryIndex(
       replacementName,
       config,
-      originalNames.add(replacementName)
+      originalNames.add(replacementName),
     );
+  }
+
+  const sourceRegistry = config.source?.[registryName]?.registry;
+  if (sourceRegistry) {
+    logger.debug(
+      `Replacing cargo source registry with ${sourceRegistry} for ${registryName}`,
+    );
+    return sourceRegistry;
   }
 
   const registryIndex = config.registries?.[registryName]?.index;
@@ -205,22 +169,27 @@ function resolveRegistryIndex(
 export async function extractPackageFile(
   content: string,
   packageFile: string,
-  _config?: ExtractConfig
-): Promise<PackageFileContent | null> {
+  _config?: ExtractConfig,
+): Promise<PackageFileContent<CargoManagerData> | null> {
   logger.trace(`cargo.extractPackageFile(${packageFile})`);
 
   const cargoConfig = (await readCargoConfig()) ?? {};
   const cargoRegistries = extractCargoRegistries(cargoConfig);
 
-  let cargoManifest: CargoManifest;
-  try {
-    cargoManifest = parse(content);
-  } catch (err) {
-    logger.debug({ err, packageFile }, 'Error parsing Cargo.toml file');
+  const parsedCargoManifest = CargoManifestSchema.safeParse(content);
+  if (!parsedCargoManifest.success) {
+    logger.debug(
+      { err: parsedCargoManifest.error, packageFile },
+      'Error parsing Cargo.toml file',
+    );
     return null;
   }
+
+  const cargoManifest = parsedCargoManifest.data;
+
   /*
     There are the following sections in Cargo.toml:
+    [package]
     [dependencies]
     [dev-dependencies]
     [build-dependencies]
@@ -237,22 +206,19 @@ export async function extractPackageFile(
       // Dependencies for `${target}`
       const deps = [
         ...extractFromSection(
-          targetContent,
-          'dependencies',
+          targetContent.dependencies,
           cargoRegistries,
-          target
+          target,
         ),
         ...extractFromSection(
-          targetContent,
-          'dev-dependencies',
+          targetContent['dev-dependencies'],
           cargoRegistries,
-          target
+          target,
         ),
         ...extractFromSection(
-          targetContent,
-          'build-dependencies',
+          targetContent['build-dependencies'],
           cargoRegistries,
-          target
+          target,
         ),
       ];
       targetDeps = targetDeps.concat(deps);
@@ -263,32 +229,73 @@ export async function extractPackageFile(
   let workspaceDeps: PackageDependency[] = [];
   if (workspaceSection) {
     workspaceDeps = extractFromSection(
-      workspaceSection,
-      'dependencies',
+      workspaceSection.dependencies,
       cargoRegistries,
       undefined,
-      'workspace.dependencies'
     );
   }
 
   const deps = [
-    ...extractFromSection(cargoManifest, 'dependencies', cargoRegistries),
-    ...extractFromSection(cargoManifest, 'dev-dependencies', cargoRegistries),
-    ...extractFromSection(cargoManifest, 'build-dependencies', cargoRegistries),
+    ...extractFromSection(cargoManifest.dependencies, cargoRegistries),
+    ...extractFromSection(cargoManifest['dev-dependencies'], cargoRegistries),
+    ...extractFromSection(cargoManifest['build-dependencies'], cargoRegistries),
     ...targetDeps,
     ...workspaceDeps,
   ];
   if (!deps.length) {
     return null;
   }
+
+  const packageSection = cargoManifest.package;
+  let version: string | undefined = undefined;
+  if (packageSection) {
+    if (is.string(packageSection.version)) {
+      version = packageSection.version;
+    } else if (
+      is.object(packageSection.version) &&
+      cargoManifest.workspace?.package?.version
+    ) {
+      // TODO: Support reading from parent workspace manifest?
+      version = cargoManifest.workspace.package.version;
+    }
+  }
+
   const lockFileName = await findLocalSiblingOrParent(
     packageFile,
-    'Cargo.lock'
+    'Cargo.lock',
   );
-  const res: PackageFileContent = { deps };
-  // istanbul ignore if
+  const res: PackageFileContent = { deps, packageFileVersion: version };
   if (lockFileName) {
+    logger.debug(
+      `Found lock file ${lockFileName} for packageFile: ${packageFile}`,
+    );
+
+    const versionsByPackage = await extractLockFileVersions(lockFileName);
+    if (!versionsByPackage) {
+      logger.debug(
+        `Could not extract lock file versions from ${lockFileName}.`,
+      );
+      return res;
+    }
+
     res.lockFiles = [lockFileName];
+
+    for (const dep of deps) {
+      const packageName = dep.packageName ?? dep.depName!;
+      const versions = coerceArray(versionsByPackage.get(packageName));
+      const lockedVersion = versioning.getSatisfyingVersion(
+        versions,
+        dep.currentValue!,
+      );
+      if (lockedVersion) {
+        dep.lockedVersion = lockedVersion;
+      } else {
+        logger.debug(
+          `No locked version found for package ${dep.depName} in the range of ${dep.currentValue}.`,
+        );
+      }
+    }
   }
+
   return res;
 }

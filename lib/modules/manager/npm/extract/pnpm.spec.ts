@@ -1,8 +1,9 @@
-import yaml from 'js-yaml';
 import { Fixtures } from '../../../../../test/fixtures';
-import { getFixturePath, logger } from '../../../../../test/util';
+import { fs, getFixturePath, logger, partial } from '../../../../../test/util';
 import { GlobalConfig } from '../../../../config/global';
-import * as fs from '../../../../util/fs';
+import * as yaml from '../../../../util/yaml';
+import type { PackageFile } from '../../types';
+import type { NpmManagerData } from '../types';
 import {
   detectPnpmWorkspaces,
   extractPnpmFilters,
@@ -10,20 +11,24 @@ import {
   getPnpmLock,
 } from './pnpm';
 
+jest.mock('../../../../util/fs');
+
 describe('modules/manager/npm/extract/pnpm', () => {
   beforeAll(() => {
     GlobalConfig.set({ localDir: getFixturePath('pnpm-monorepo/', '..') });
   });
 
+  beforeEach(() => {
+    jest.restoreAllMocks();
+  });
+
   describe('.extractPnpmFilters()', () => {
     it('detects errors in pnpm-workspace.yml file structure', async () => {
-      jest
-        .spyOn(fs, 'readLocalFile')
-        .mockResolvedValueOnce('p!!!ckages:\n - "packages/*"');
+      fs.readLocalFile.mockResolvedValueOnce('p!!!ckages:\n - "packages/*"');
 
       const workSpaceFilePath = getFixturePath(
         'pnpm-monorepo/pnpm-workspace.yml',
-        '..'
+        '..',
       );
       const res = await extractPnpmFilters(workSpaceFilePath);
       expect(res).toBeUndefined();
@@ -31,12 +36,12 @@ describe('modules/manager/npm/extract/pnpm', () => {
         {
           fileName: expect.any(String),
         },
-        'Failed to find required "packages" array in pnpm-workspace.yaml'
+        'Failed to find required "packages" array in pnpm-workspace.yaml',
       );
     });
 
     it('detects errors when opening pnpm-workspace.yml file', async () => {
-      jest.spyOn(yaml, 'load').mockImplementationOnce(() => {
+      jest.spyOn(yaml, 'parseSingleYaml').mockImplementationOnce(() => {
         throw new Error();
       });
 
@@ -47,26 +52,27 @@ describe('modules/manager/npm/extract/pnpm', () => {
           fileName: expect.any(String),
           err: expect.anything(),
         }),
-        'Failed to parse pnpm-workspace.yaml'
+        'Failed to parse pnpm-workspace.yaml',
       );
     });
   });
 
   describe('.findPnpmWorkspace()', () => {
     it('detects missing pnpm-workspace.yaml', async () => {
-      jest.spyOn(fs, 'findLocalSiblingOrParent').mockResolvedValueOnce(null);
+      fs.findLocalSiblingOrParent.mockResolvedValueOnce(null);
 
       const packageFile = 'package.json';
       const res = await findPnpmWorkspace(packageFile);
       expect(res).toBeNull();
       expect(logger.logger.trace).toHaveBeenCalledWith(
         expect.objectContaining({ packageFile }),
-        'Failed to locate pnpm-workspace.yaml in a parent directory.'
+        'Failed to locate pnpm-workspace.yaml in a parent directory.',
       );
     });
 
     it('detects missing pnpm-lock.yaml when pnpm-workspace.yaml was already found', async () => {
-      jest.spyOn(fs, 'localPathExists').mockResolvedValueOnce(false);
+      fs.findLocalSiblingOrParent.mockResolvedValueOnce('pnpm-workspace.yaml');
+      fs.localPathExists.mockResolvedValueOnce(false);
 
       const packageFile = 'package.json';
       const res = await findPnpmWorkspace(packageFile);
@@ -76,14 +82,30 @@ describe('modules/manager/npm/extract/pnpm', () => {
           workspaceYamlPath: 'pnpm-workspace.yaml',
           packageFile,
         }),
-        'Failed to find a pnpm-lock.yaml sibling for the workspace.'
+        'Failed to find a pnpm-lock.yaml sibling for the workspace.',
       );
     });
   });
 
   describe('.detectPnpmWorkspaces()', () => {
+    beforeEach(() => {
+      const realFs = jest.requireActual<typeof fs>('../../../../util/fs');
+
+      // The real implementations of these functions are used for this block;
+      // they do static path manipulation.
+      fs.findLocalSiblingOrParent.mockImplementation(
+        realFs.findLocalSiblingOrParent,
+      );
+      fs.getSiblingFileName.mockImplementation(realFs.getSiblingFileName);
+
+      // Falls through to reading from the fixture path defined in GlobalConfig
+      // at the top of this file
+      fs.readLocalFile.mockImplementation(realFs.readLocalFile);
+    });
+
     it('uses pnpm workspaces', async () => {
-      const packageFiles = [
+      fs.localPathExists.mockResolvedValue(true);
+      const packageFiles = partial<PackageFile<NpmManagerData>>([
         {
           packageFile: 'package.json',
           managerData: { pnpmShrinkwrap: 'pnpm-lock.yaml' },
@@ -91,81 +113,82 @@ describe('modules/manager/npm/extract/pnpm', () => {
         {
           packageFile: 'nested-packages/group/a/package.json',
           managerData: {
-            pnpmShrinkwrap: undefined as undefined | string,
+            pnpmShrinkwrap: undefined,
             packageJsonName: '@demo/nested-group-a',
           },
         },
         {
           packageFile: 'nested-packages/group/b/package.json',
           managerData: {
-            pnpmShrinkwrap: undefined as undefined | string,
+            pnpmShrinkwrap: undefined,
             packageJsonName: '@demo/nested-group-b',
           },
         },
         {
           packageFile: 'non-nested-packages/a/package.json',
           managerData: {
-            pnpmShrinkwrap: undefined as undefined | string,
+            pnpmShrinkwrap: undefined,
             packageJsonName: '@demo/non-nested-a',
           },
         },
         {
           packageFile: 'non-nested-packages/b/package.json',
           managerData: {
-            pnpmShrinkwrap: undefined as undefined | string,
+            pnpmShrinkwrap: undefined,
             packageJsonName: '@demo/non-nested-b',
           },
         },
         {
           packageFile: 'solo-package/package.json',
           managerData: {
-            pnpmShrinkwrap: undefined as undefined | string,
+            pnpmShrinkwrap: undefined,
             packageJsonName: '@demo/solo',
           },
         },
         {
           packageFile: 'solo-package-leading-dot-slash/package.json',
           managerData: {
-            pnpmShrinkwrap: undefined as undefined | string,
+            pnpmShrinkwrap: undefined,
             packageJsonName: '@demo/solo-leading-dot-slash',
           },
         },
         {
           packageFile: 'solo-package-leading-double-dot-slash/package.json',
           managerData: {
-            pnpmShrinkwrap: undefined as undefined | string,
+            pnpmShrinkwrap: undefined,
             packageJsonName: '@demo/solo-leading-double-dot-slash',
           },
         },
         {
           packageFile: 'solo-package-trailing-slash/package.json',
           managerData: {
-            pnpmShrinkwrap: undefined as undefined | string,
+            pnpmShrinkwrap: undefined,
             packageJsonName: '@demo/solo-trailing-slash',
           },
         },
         {
           packageFile: 'test/test-package/package.json',
           managerData: {
-            pnpmShrinkwrap: undefined as undefined | string,
+            pnpmShrinkwrap: undefined,
             packageJsonName: '@demo/test-package',
           },
         },
         {
           packageFile: 'tests/test-package2/package.json',
           managerData: {
-            pnpmShrinkwrap: undefined as undefined | string,
+            pnpmShrinkwrap: undefined,
             packageJsonName: '@demo/test-package2',
           },
         },
-      ];
+      ]);
 
       await detectPnpmWorkspaces(packageFiles);
       expect(packageFiles).toMatchSnapshot();
       expect(
         packageFiles.every(
-          (packageFile) => packageFile.managerData.pnpmShrinkwrap
-        )
+          (packageFile) =>
+            packageFile.managerData?.pnpmShrinkwrap !== undefined,
+        ),
       ).toBeTrue();
     });
 
@@ -187,6 +210,7 @@ describe('modules/manager/npm/extract/pnpm', () => {
     });
 
     it('filters none matching packages', async () => {
+      fs.localPathExists.mockResolvedValue(true);
       const packageFiles = [
         {
           packageFile: 'package.json',
@@ -195,12 +219,12 @@ describe('modules/manager/npm/extract/pnpm', () => {
         {
           packageFile: 'nested-packages/group/a/package.json',
           packageJsonName: '@demo/nested-group-a',
-          managerData: { pnpmShrinkwrap: undefined as undefined | string },
+          managerData: { pnpmShrinkwrap: undefined },
         },
         {
           packageFile: 'not-matching/b/package.json',
           packageJsonName: '@not-matching/b',
-          managerData: { pnpmShrinkwrap: undefined as undefined | string },
+          managerData: { pnpmShrinkwrap: undefined },
         },
       ];
 
@@ -224,24 +248,22 @@ describe('modules/manager/npm/extract/pnpm', () => {
       expect(
         packageFiles.find(
           (packageFile) =>
-            packageFile.packageFile === 'not-matching/b/package.json'
-        )?.managerData.pnpmShrinkwrap
+            packageFile.packageFile === 'not-matching/b/package.json',
+        )?.managerData.pnpmShrinkwrap,
       ).toBeUndefined();
     });
   });
 
   describe('.getPnpmLock()', () => {
-    const readLocalFile = jest.spyOn(fs, 'readLocalFile');
-
     it('returns empty if failed to parse', async () => {
-      readLocalFile.mockResolvedValueOnce(undefined as never);
+      fs.readLocalFile.mockResolvedValueOnce(undefined as never);
       const res = await getPnpmLock('package.json');
       expect(res.lockedVersionsWithPath).toBeUndefined();
     });
 
     it('extracts version from monorepo', async () => {
       const plocktest1Lock = Fixtures.get('pnpm-monorepo/pnpm-lock.yaml', '..');
-      readLocalFile.mockResolvedValueOnce(plocktest1Lock);
+      fs.readLocalFile.mockResolvedValueOnce(plocktest1Lock);
       const res = await getPnpmLock('package.json');
       expect(Object.keys(res.lockedVersionsWithPath!)).toHaveLength(11);
     });
@@ -249,15 +271,15 @@ describe('modules/manager/npm/extract/pnpm', () => {
     it('extracts version from normal repo', async () => {
       const plocktest1Lock = Fixtures.get(
         'lockfile-parsing/pnpm-lock.yaml',
-        '..'
+        '..',
       );
-      readLocalFile.mockResolvedValueOnce(plocktest1Lock);
+      fs.readLocalFile.mockResolvedValueOnce(plocktest1Lock);
       const res = await getPnpmLock('package.json');
       expect(Object.keys(res.lockedVersionsWithPath!)).toHaveLength(1);
     });
 
     it('returns empty if no deps', async () => {
-      readLocalFile.mockResolvedValueOnce('{}');
+      fs.readLocalFile.mockResolvedValueOnce('{}');
       const res = await getPnpmLock('package.json');
       expect(res.lockedVersionsWithPath).toBeUndefined();
     });

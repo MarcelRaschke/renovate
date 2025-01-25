@@ -1,5 +1,6 @@
 import { regEx } from '../../../util/regex';
-import { GenericVersion, GenericVersioningApi } from '../generic';
+import type { GenericVersion } from '../generic';
+import { GenericVersioningApi } from '../generic';
 import type { VersioningApi } from '../types';
 
 export const id = 'redhat';
@@ -8,7 +9,7 @@ export const urls = [];
 export const supportsRanges = false;
 
 const pattern = regEx(
-  /^(?<major>\d+)(?:\.(?<minor>\d+))?(?:\.(?<patch>\d+))?(?:-(?<releaseMajor>\d+)(?:\.(?<releaseMinor>\d+))?)?$/
+  /^(?<major>\d+)(?:\.(?<minor>\d+))?(?:\.(?<patch>\d+))?(?:-(?<releaseMajor>\d+)(?:\.(?<releaseMinor>\d+))?)?$/,
 );
 
 class RedhatVersioningApi extends GenericVersioningApi {

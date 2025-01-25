@@ -62,7 +62,11 @@ describe('modules/datasource/bitbucket-tags/index', () => {
       httpMock
         .scope('https://api.bitbucket.org')
         .get('/2.0/repositories/some/dep2')
-        .reply(200, { mainbranch: { name: 'master' } });
+        .reply(200, {
+          mainbranch: { name: 'master' },
+          uuid: '123',
+          full_name: 'some/repo',
+        });
       httpMock
         .scope('https://api.bitbucket.org')
         .get('/2.0/repositories/some/dep2/commits/master')
@@ -87,7 +91,11 @@ describe('modules/datasource/bitbucket-tags/index', () => {
       httpMock
         .scope('https://api.bitbucket.org')
         .get('/2.0/repositories/some/dep2')
-        .reply(200, { mainbranch: { name: 'master' } });
+        .reply(200, {
+          mainbranch: { name: 'master' },
+          uuid: '123',
+          full_name: 'some/repo',
+        });
       httpMock
         .scope('https://api.bitbucket.org')
         .get('/2.0/repositories/some/dep2/commits/master')
@@ -118,7 +126,7 @@ describe('modules/datasource/bitbucket-tags/index', () => {
           datasource,
           packageName: 'some/dep2',
         },
-        'v1.0.0'
+        'v1.0.0',
       );
       expect(res).toMatchSnapshot();
       expect(res).toBeString();
@@ -138,7 +146,7 @@ describe('modules/datasource/bitbucket-tags/index', () => {
           datasource,
           packageName: 'some/dep2',
         },
-        'v1.0.0'
+        'v1.0.0',
       );
       expect(res).toBeNull();
     });

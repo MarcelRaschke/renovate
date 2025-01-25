@@ -1,4 +1,5 @@
-import { ECR, ECRClientConfig } from '@aws-sdk/client-ecr';
+import type { ECRClientConfig } from '@aws-sdk/client-ecr';
+import { ECR } from '@aws-sdk/client-ecr';
 import { logger } from '../../../logger';
 import type { HostRule } from '../../../types';
 import type { HttpError } from '../../../util/http';
@@ -6,15 +7,25 @@ import type { HttpResponse } from '../../../util/http/types';
 import { regEx } from '../../../util/regex';
 import { addSecretForSanitizing } from '../../../util/sanitize';
 
-export const ecrRegex = regEx(/\d+\.dkr\.ecr\.([-a-z0-9]+)\.amazonaws\.com/);
+export const ecrRegex = regEx(
+  /\d+\.dkr\.ecr(?:-fips)?\.([-a-z0-9]+)\.amazonaws\.com/,
+);
 export const ecrPublicRegex = regEx(/public\.ecr\.aws/);
 
 export async function getECRAuthToken(
   region: string,
-  opts: HostRule
+  opts: HostRule,
 ): Promise<string | null> {
   const config: ECRClientConfig = { region };
-  if (opts.username && opts.password) {
+  if (opts.username === `AWS` && opts.password) {
+    logger.trace(
+      `AWS user specified, encoding basic auth credentials for ECR registry`,
+    );
+    return Buffer.from(`AWS:${opts.password}`).toString('base64');
+  } else if (opts.username && opts.password) {
+    logger.trace(
+      `Using AWS accessKey to get Authorization token for ECR registry`,
+    );
     config.credentials = {
       accessKeyId: opts.username,
       secretAccessKey: opts.password,
@@ -32,11 +43,11 @@ export async function getECRAuthToken(
       return authorizationToken;
     }
     logger.warn(
-      'Could not extract authorizationToken from ECR getAuthorizationToken response'
+      'Could not extract authorizationToken from ECR getAuthorizationToken response',
     );
   } catch (err) {
     logger.trace({ err }, 'err');
-    logger.debug('ECR getAuthorizationToken error');
+    logger.warn('ECR getAuthorizationToken error');
   }
   return null;
 }
@@ -48,7 +59,7 @@ export function isECRMaxResultsError(err: HttpError): boolean {
     resp.headers?.['docker-distribution-api-version'] &&
     // https://docs.aws.amazon.com/AmazonECR/latest/APIReference/API_DescribeRepositories.html#ECR-DescribeRepositories-request-maxResults
     resp.body?.['errors']?.[0]?.message?.includes(
-      'Member must have value less than or equal to 1000'
+      'Member must have value less than or equal to 1000',
     )
   );
 }

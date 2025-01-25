@@ -3,7 +3,7 @@ import { logger } from '../../../../../logger';
 import { joinUrlParts } from '../../../../../util/url';
 import { HelmDatasource } from '../../../../datasource/helm';
 import { getDep } from '../../../dockerfile/extract';
-import { isOCIRegistry } from '../../../helmv3/utils';
+import { isOCIRegistry, removeOCIPrefix } from '../../../helmv3/oci';
 import type { ExtractConfig, PackageDependency } from '../../../types';
 import { DependencyExtractor } from '../../base';
 import type { TerraformDefinitionFile } from '../../hcl/types';
@@ -18,7 +18,7 @@ export class HelmReleaseExtractor extends DependencyExtractor {
   override extract(
     hclMap: TerraformDefinitionFile,
     _locks: ProviderLock[],
-    config: ExtractConfig
+    config: ExtractConfig,
   ): PackageDependency[] {
     const dependencies = [];
 
@@ -31,7 +31,7 @@ export class HelmReleaseExtractor extends DependencyExtractor {
     if (!is.plainObject(helmReleases)) {
       logger.debug(
         { helmReleases },
-        'Terraform: unexpected `helmReleases` value'
+        'Terraform: unexpected `helmReleases` value',
       );
       return [];
     }
@@ -50,7 +50,7 @@ export class HelmReleaseExtractor extends DependencyExtractor {
         dep.skipReason = 'invalid-name';
       } else if (isOCIRegistry(helmRelease.chart)) {
         // For oci charts, we remove the oci:// and use the docker datasource
-        dep.depName = helmRelease.chart.replace('oci://', '');
+        dep.depName = removeOCIPrefix(helmRelease.chart);
         this.processOCI(dep.depName, config, dep);
       } else if (checkIfStringIsPath(helmRelease.chart)) {
         dep.skipReason = 'local-chart';
@@ -59,11 +59,11 @@ export class HelmReleaseExtractor extends DependencyExtractor {
           // For oci charts, we remove the oci:// and use the docker datasource
           this.processOCI(
             joinUrlParts(
-              helmRelease.repository.replace('oci://', ''),
-              helmRelease.chart
+              removeOCIPrefix(helmRelease.repository),
+              helmRelease.chart,
             ),
             config,
-            dep
+            dep,
           );
         } else {
           dep.registryUrls = [helmRelease.repository];
@@ -77,12 +77,12 @@ export class HelmReleaseExtractor extends DependencyExtractor {
   private processOCI(
     depName: string,
     config: ExtractConfig,
-    dep: PackageDependency
+    dep: PackageDependency,
   ): void {
     const { depName: packageName, datasource } = getDep(
       depName,
       false,
-      config.registryAliases
+      config.registryAliases,
     );
     dep.packageName = packageName;
     dep.datasource = datasource;

@@ -6,18 +6,42 @@ function jsUcfirst(string: string): string {
   return string.charAt(0).toUpperCase() + string.slice(1);
 }
 
+function getEditUrl(name: string): string {
+  const url =
+    'https://github.com/renovatebot/renovate/edit/main/lib/config/presets/internal/';
+  const dataUrl = 'https://github.com/renovatebot/renovate/edit/main/lib/data/';
+  switch (name) {
+    case 'customManagers':
+      return `${url}custom-managers.ts`;
+    case 'mergeConfidence':
+      return `${url}merge-confidence.ts`;
+    case 'monorepo':
+      return `${dataUrl}${name}.json`;
+    case 'replacements':
+      return `${dataUrl}${name}.json`;
+    default:
+      return `${url}${name}.ts`;
+  }
+}
+
 /**
- * @param {string} name
+ * @param {string} presetTitle
  * @param {number} order
+ * @param {string} presetName
  */
-function generateFrontMatter(name: string, order: number): string {
+function generateFrontMatter(
+  presetTitle: string,
+  order: number,
+  presetName: string,
+): string {
   return `---
 date: 2017-12-07
-title: ${name} Presets
+title: ${presetTitle} Presets
 categories:
     - config-presets
 type: Document
 order: ${order}
+edit_url: ${getEditUrl(presetName)}
 ---
 `;
 }
@@ -30,7 +54,7 @@ export async function generatePresets(dist: string): Promise<void> {
       .replace('Js', 'JS')
       .replace(/s$/, '')
       .replace(/^Config$/, 'Full Config');
-    const frontMatter = generateFrontMatter(formattedName, index);
+    const frontMatter = generateFrontMatter(formattedName, index, name);
     let content = `\n`;
     for (const [preset, value] of Object.entries(presetConfig)) {
       let header = `\n### ${name === 'default' ? '' : name}:${preset}`;
@@ -46,7 +70,10 @@ export async function generatePresets(dist: string): Promise<void> {
       if (presetDescription) {
         body += `\n\n${presetDescription}\n`;
       } else {
-        logger.warn(`Preset ${name}:${preset} has no description`);
+        logger.warn(
+          { preset: `${name}:${preset}` },
+          'Preset has no description',
+        );
       }
       body += '\n```json\n';
       body += JSON.stringify(value, null, 2);

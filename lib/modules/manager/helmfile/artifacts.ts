@@ -12,14 +12,12 @@ import {
 } from '../../../util/fs';
 import { getFile } from '../../../util/git';
 import { regEx } from '../../../util/regex';
+import { Result } from '../../../util/result';
+import { parseYaml } from '../../../util/yaml';
 import { generateHelmEnvs } from '../helmv3/common';
 import type { UpdateArtifact, UpdateArtifactsResult } from '../types';
-import {
-  generateRegistryLoginCmd,
-  isOCIRegistry,
-  parseDoc,
-  parseLock,
-} from './utils';
+import { Doc, LockVersion } from './schema';
+import { generateRegistryLoginCmd, isOCIRegistry } from './utils';
 
 export async function updateArtifacts({
   packageFileName,
@@ -58,11 +56,11 @@ export async function updateArtifacts({
         toolName: 'helmfile',
         constraint:
           config.constraints?.helmfile ??
-          parseLock(existingLockFileContent).version,
+          Result.parse(existingLockFileContent, LockVersion).unwrapOrNull(),
       },
     ];
     const needKustomize = updatedDeps.some(
-      (dep) => dep.managerData?.needKustomize
+      (dep) => dep.managerData?.needKustomize,
     );
     if (needKustomize) {
       toolConstraints.push({
@@ -72,24 +70,31 @@ export async function updateArtifacts({
     }
 
     const cmd: string[] = [];
-    const doc = parseDoc(newPackageFileContent);
+    const docs = parseYaml(newPackageFileContent, {
+      removeTemplates: true,
+      customSchema: Doc,
+      failureBehaviour: 'filter',
+    });
 
-    for (const value of coerceArray(doc.repositories).filter(isOCIRegistry)) {
-      const loginCmd = generateRegistryLoginCmd(
-        value.name,
-        `https://${value.url}`,
-        // this extracts the hostname from url like format ghcr.ip/helm-charts
-        value.url.replace(regEx(/\/.*/), '')
-      );
+    for (const doc of docs) {
+      for (const value of coerceArray(doc.repositories).filter(isOCIRegistry)) {
+        const loginCmd = await generateRegistryLoginCmd(
+          value.name,
+          `https://${value.url}`,
+          // this extracts the hostname from url like format ghcr.ip/helm-charts
+          value.url.replace(regEx(/\/.*/), ''),
+        );
 
-      if (loginCmd) {
-        cmd.push(loginCmd);
+        if (loginCmd) {
+          cmd.push(loginCmd);
+        }
       }
     }
 
     cmd.push(`helmfile deps -f ${quote(packageFileName)}`);
     await exec(cmd, {
       docker: {},
+      userConfiguredEnv: config.env,
       extraEnv: generateHelmEnvs(),
       toolConstraints,
     });

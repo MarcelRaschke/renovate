@@ -4,6 +4,7 @@ import { GlobalConfig } from '../../../../../config/global';
 import * as semverVersioning from '../../../../../modules/versioning/semver';
 import * as githubGraphql from '../../../../../util/github/graphql';
 import * as hostRules from '../../../../../util/host-rules';
+import type { Timestamp } from '../../../../../util/timestamp';
 import type { BranchConfig } from '../../../../types';
 import * as releases from './releases';
 import { getChangeLogJSON } from '.';
@@ -29,10 +30,13 @@ const upgrade = partial<BranchConfig>({
     {
       version: '2.3.0',
       gitRef: 'npm_2.3.0',
-      releaseTimestamp: '2017-10-24T03:20:46.238Z',
+      releaseTimestamp: '2017-10-24T03:20:46.238Z' as Timestamp,
     },
     { version: '2.2.2', gitRef: 'npm_2.2.2' },
-    { version: '2.4.2', releaseTimestamp: '2017-12-24T03:20:46.238Z' },
+    {
+      version: '2.4.2',
+      releaseTimestamp: '2017-12-24T03:20:46.238Z' as Timestamp,
+    },
     { version: '2.5.2' },
   ],
 });
@@ -53,7 +57,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           currentVersion: undefined,
-        })
+        }),
       ).toBeNull();
     });
 
@@ -62,7 +66,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           sourceUrl: 'https://dev.azure.com/unknown-repo',
-        })
+        }),
       ).toBeNull();
     });
 
@@ -71,7 +75,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           sourceUrl: 'https://github.com/DefinitelyTyped/DefinitelyTyped',
-        })
+        }),
       ).toBeNull();
     });
 
@@ -81,7 +85,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
           ...upgrade,
           currentVersion: '1.0.0',
           newVersion: '1.0.0',
-        })
+        }),
       ).toBeNull();
     });
 
@@ -90,7 +94,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           sourceUrl: 'https://github.com/about',
-        })
+        }),
       ).toBeNull();
     });
 
@@ -110,7 +114,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
       expect(
         await getChangeLogJSON({
           ...upgrade,
-        })
+        }),
       ).toMatchSnapshot({
         hasReleaseNotes: true,
         project: {
@@ -145,7 +149,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
       expect(
         await getChangeLogJSON({
           ...upgrade,
-        })
+        }),
       ).toMatchSnapshot({
         hasReleaseNotes: true,
         project: {
@@ -169,7 +173,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
     it('filters unnecessary warns', async () => {
       githubTagsMock.mockRejectedValue(new Error('Unknown Github Repo'));
       githubReleasesMock.mockRejectedValueOnce(
-        new Error('Unknown Github Repo')
+        new Error('Unknown Github Repo'),
       );
       httpMock.scope(githubApiHost).get(/.*/).reply(200, []).persist();
       const res = await getChangeLogJSON({
@@ -204,7 +208,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           depType: 'engines',
-        })
+        }),
       ).toMatchSnapshot({
         hasReleaseNotes: true,
         project: {
@@ -230,7 +234,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           sourceUrl: undefined,
-        })
+        }),
       ).toBeNull();
     });
 
@@ -239,7 +243,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           sourceUrl: 'http://example.com',
-        })
+        }),
       ).toBeNull();
     });
 
@@ -249,7 +253,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           sourceUrl: 'https://github.com',
-        })
+        }),
       ).toEqual({ error: 'MissingGithubToken' });
     });
 
@@ -258,7 +262,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           releases: [],
-        })
+        }),
       ).toBeNull();
     });
 
@@ -267,7 +271,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           releases: [{ version: '0.9.0' }],
-        })
+        }),
       ).toBeNull();
     });
 
@@ -292,7 +296,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           endpoint: 'https://github-enterprise.example.com/',
-        })
+        }),
       ).toMatchSnapshot({
         hasReleaseNotes: true,
         project: {
@@ -332,7 +336,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
           ...upgrade,
           sourceUrl: 'https://github-enterprise.example.com/chalk/chalk',
           endpoint: 'https://github-enterprise.example.com/',
-        })
+        }),
       ).toMatchSnapshot({
         hasReleaseNotes: true,
         project: {
@@ -370,7 +374,7 @@ describe('workers/repository/update/pr/changelog/index', () => {
         await getChangeLogJSON({
           ...upgrade,
           sourceUrl: 'https://github-enterprise.example.com/chalk/chalk',
-        })
+        }),
       ).toMatchSnapshot({
         hasReleaseNotes: true,
         project: {

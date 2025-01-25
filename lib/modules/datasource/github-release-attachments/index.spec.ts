@@ -1,11 +1,13 @@
+import { mockDeep } from 'jest-mock-extended';
 import { getDigest, getPkgReleases } from '..';
 import { mocked } from '../../../../test/util';
 import * as githubGraphql from '../../../util/github/graphql';
 import * as _hostRules from '../../../util/host-rules';
+import type { Timestamp } from '../../../util/timestamp';
 import { GitHubReleaseAttachmentMocker } from './test';
 import { GithubReleaseAttachmentsDatasource } from '.';
 
-jest.mock('../../../util/host-rules');
+jest.mock('../../../util/host-rules', () => mockDeep());
 const hostRules = mocked(_hostRules);
 
 const githubApiHost = 'https://api.github.com';
@@ -27,7 +29,7 @@ describe('modules/datasource/github-release-attachments/index', () => {
           name: 'some/dep2',
           description: 'some description',
           version: 'a',
-          releaseTimestamp: '2020-03-09T13:00:00Z',
+          releaseTimestamp: '2020-03-09T13:00:00Z' as Timestamp,
         },
         {
           id: 2,
@@ -35,7 +37,7 @@ describe('modules/datasource/github-release-attachments/index', () => {
           name: 'some/dep2',
           description: 'some description',
           version: 'v',
-          releaseTimestamp: '2020-03-09T12:00:00Z',
+          releaseTimestamp: '2020-03-09T12:00:00Z' as Timestamp,
         },
         {
           id: 3,
@@ -43,7 +45,7 @@ describe('modules/datasource/github-release-attachments/index', () => {
           name: 'some/dep2',
           description: 'some description',
           version: '1.0.0',
-          releaseTimestamp: '2020-03-09T11:00:00Z',
+          releaseTimestamp: '2020-03-09T11:00:00Z' as Timestamp,
         },
         {
           id: 4,
@@ -51,7 +53,7 @@ describe('modules/datasource/github-release-attachments/index', () => {
           name: 'some/dep2',
           description: 'some description',
           version: 'v1.1.0',
-          releaseTimestamp: '2020-03-09T10:00:00Z',
+          releaseTimestamp: '2020-03-09T10:00:00Z' as Timestamp,
         },
         {
           id: 5,
@@ -59,7 +61,7 @@ describe('modules/datasource/github-release-attachments/index', () => {
           name: 'some/dep2',
           description: 'some description',
           version: '2.0.0',
-          releaseTimestamp: '2020-04-09T10:00:00Z',
+          releaseTimestamp: '2020-04-09T10:00:00Z' as Timestamp,
           isStable: false,
         },
       ]);
@@ -92,13 +94,13 @@ describe('modules/datasource/github-release-attachments/index', () => {
 
     const releaseMock = new GitHubReleaseAttachmentMocker(
       githubApiHost,
-      packageName
+      packageName,
     );
 
     it('requires currentDigest', async () => {
       const digest = await getDigest(
         { datasource: GithubReleaseAttachmentsDatasource.id, packageName },
-        currentValue
+        currentValue,
       );
       expect(digest).toBeNull();
     });
@@ -110,7 +112,7 @@ describe('modules/datasource/github-release-attachments/index', () => {
           packageName,
           currentDigest,
         },
-        currentValue
+        currentValue,
       );
       expect(digest).toEqual(currentDigest);
     });
@@ -118,7 +120,7 @@ describe('modules/datasource/github-release-attachments/index', () => {
     it('returns updated digest in new release', async () => {
       releaseMock.withDigestFileAsset(
         currentValue,
-        `${currentDigest} asset.zip`
+        `${currentDigest} asset.zip`,
       );
       const nextValue = 'v1.0.1';
       const nextDigest = 'updated-digest';
@@ -130,7 +132,7 @@ describe('modules/datasource/github-release-attachments/index', () => {
           currentValue,
           currentDigest,
         },
-        nextValue
+        nextValue,
       );
       expect(digest).toEqual(nextDigest);
     });
@@ -146,7 +148,7 @@ describe('modules/datasource/github-release-attachments/index', () => {
           currentValue,
           currentDigest,
         },
-        currentValue
+        currentValue,
       );
       expect(digest).toEqual(currentDigest);
     });

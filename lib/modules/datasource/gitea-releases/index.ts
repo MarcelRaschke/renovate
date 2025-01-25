@@ -1,4 +1,5 @@
 import { cache } from '../../../util/cache/package/decorator';
+import type { PackageCacheNamespace } from '../../../util/cache/package/types';
 import { GiteaHttp } from '../../../util/http/gitea';
 import { Datasource } from '../datasource';
 import { GiteaTagsDatasource } from '../gitea-tags';
@@ -7,13 +8,20 @@ import type { DigestConfig, GetReleasesConfig, ReleaseResult } from '../types';
 import { ReleasesSchema } from './schema';
 
 export class GiteaReleasesDatasource extends Datasource {
-  override http = new GiteaHttp(GiteaReleasesDatasource.id);
-
   static readonly id = 'gitea-releases';
+
+  override http = new GiteaHttp(GiteaReleasesDatasource.id);
 
   static readonly defaultRegistryUrls = ['https://gitea.com'];
 
-  private static readonly cacheNamespace = `datasource-${GiteaReleasesDatasource.id}`;
+  private static readonly cacheNamespace: PackageCacheNamespace = `datasource-${GiteaReleasesDatasource.id}`;
+
+  override readonly releaseTimestampSupport = true;
+  override readonly releaseTimestampNote =
+    'The release timestamp is determined from the `published_at` field in the results.';
+  override readonly sourceUrlSupport = 'package';
+  override readonly sourceUrlNote =
+    'The source URL is determined by using the `packageName` and `registryUrl`.';
 
   constructor() {
     super(GiteaReleasesDatasource.id);
@@ -30,7 +38,7 @@ export class GiteaReleasesDatasource extends Datasource {
     packageName: repo,
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
     const url = `${GiteaTagsDatasource.getApiUrl(
-      registryUrl
+      registryUrl,
     )}repos/${repo}/releases?draft=false`;
     const tags = (
       await this.http.getJson(
@@ -38,7 +46,7 @@ export class GiteaReleasesDatasource extends Datasource {
         {
           paginate: true,
         },
-        ReleasesSchema
+        ReleasesSchema,
       )
     ).body;
 
@@ -65,10 +73,10 @@ export class GiteaReleasesDatasource extends Datasource {
   async getTagCommit(
     registryUrl: string | undefined,
     repo: string,
-    tag: string
+    tag: string,
   ): Promise<string | null> {
     const url = `${GiteaTagsDatasource.getApiUrl(
-      registryUrl
+      registryUrl,
     )}repos/${repo}/tags/${tag}`;
 
     const { body } = await this.http.getJson(url, TagSchema);
@@ -85,14 +93,14 @@ export class GiteaReleasesDatasource extends Datasource {
   })
   override async getDigest(
     { packageName: repo, registryUrl }: DigestConfig,
-    newValue?: string
+    newValue?: string,
   ): Promise<string | null> {
     if (newValue?.length) {
       return this.getTagCommit(registryUrl, repo, newValue);
     }
 
     const url = `${GiteaTagsDatasource.getApiUrl(
-      registryUrl
+      registryUrl,
     )}repos/${repo}/commits?stat=false&verification=false&files=false&page=1&limit=1`;
     const { body } = await this.http.getJson(url, CommitsSchema);
 

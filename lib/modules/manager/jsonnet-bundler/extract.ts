@@ -8,7 +8,7 @@ import type { Dependency, JsonnetFile } from './types';
 
 export function extractPackageFile(
   content: string,
-  packageFile: string
+  packageFile: string,
 ): PackageFileContent | null {
   logger.trace({ packageFile }, 'jsonnet-bundler.extractPackageFile()');
 
@@ -20,7 +20,7 @@ export function extractPackageFile(
   let jsonnetFile: JsonnetFile;
   try {
     jsonnetFile = JSON.parse(content) as JsonnetFile;
-  } catch (err) {
+  } catch {
     logger.debug({ packageFile }, `Invalid JSON`);
     return null;
   }
@@ -53,7 +53,7 @@ function extractDependency(dependency: Dependency): PackageDependency | null {
   const depName = join(
     gitRemote.host,
     gitRemote.pathname.replace(/\.git$/, ''),
-    coerceString(dependency.source.git.subdir)
+    coerceString(dependency.source.git.subdir),
   );
 
   return {

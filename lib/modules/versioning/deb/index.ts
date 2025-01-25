@@ -1,5 +1,6 @@
 import { regEx } from '../../../util/regex';
-import { GenericVersion, GenericVersioningApi } from '../generic';
+import type { GenericVersion } from '../generic';
+import { GenericVersioningApi } from '../generic';
 import type { VersioningApi } from '../types';
 
 export const id = 'deb';
@@ -63,7 +64,7 @@ class DebVersioningApi extends GenericVersioningApi {
       return null;
     }
     const release = [...remainingVersion.matchAll(numericPattern)].map((m) =>
-      parseInt(m[0], 10)
+      parseInt(m[0], 10),
     );
     return {
       epoch: parseInt(epochStr, 10),
@@ -111,10 +112,10 @@ class DebVersioningApi extends GenericVersioningApi {
         // Lexicographical comparison
         // numeric character is treated like end of string (they are part of a new block)
         const aPriority = characterOrder.indexOf(
-          numericChars.includes(aChar) || aChar === '' ? ' ' : aChar
+          numericChars.includes(aChar) || aChar === '' ? ' ' : aChar,
         );
         const bPriority = characterOrder.indexOf(
-          numericChars.includes(bChar) || bChar === '' ? ' ' : bChar
+          numericChars.includes(bChar) || bChar === '' ? ' ' : bChar,
         );
         return Math.sign(aPriority - bPriority);
       }
@@ -134,7 +135,7 @@ class DebVersioningApi extends GenericVersioningApi {
     }
     const upstreamVersionDifference = this._compare_string(
       parsed1.upstreamVersion,
-      parsed2.upstreamVersion
+      parsed2.upstreamVersion,
     );
     if (upstreamVersionDifference !== 0) {
       return upstreamVersionDifference;

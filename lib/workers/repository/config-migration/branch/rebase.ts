@@ -12,14 +12,11 @@ import type { MigratedData } from './migrated-data';
 
 export async function rebaseMigrationBranch(
   config: RenovateConfig,
-  migratedConfigData: MigratedData
+  migratedConfigData: MigratedData,
 ): Promise<string | null> {
   logger.debug('Checking if migration branch needs rebasing');
+  const baseBranch = config.defaultBranch!;
   const branchName = getMigrationBranchName(config);
-  if (await scm.isBranchModified(branchName)) {
-    logger.debug('Migration branch has been edited and cannot be rebased');
-    return null;
-  }
   const configFileName = migratedConfigData.filename;
   let contents = migratedConfigData.content;
   const existingContents = await getFile(configFileName, branchName);
@@ -38,14 +35,13 @@ export async function rebaseMigrationBranch(
 
   const commitMessageFactory = new ConfigMigrationCommitMessageFactory(
     config,
-    configFileName
+    configFileName,
   );
   const commitMessage = commitMessageFactory.getCommitMessage();
 
-  await scm.checkoutBranch(config.defaultBranch!);
-  contents = await MigratedDataFactory.applyPrettierFormatting(
-    migratedConfigData
-  );
+  await scm.checkoutBranch(baseBranch);
+  contents =
+    await MigratedDataFactory.applyPrettierFormatting(migratedConfigData);
   return scm.commitAndPush({
     baseBranch: config.baseBranch,
     branchName,
@@ -57,7 +53,7 @@ export async function rebaseMigrationBranch(
       },
     ],
     message: commitMessage.toString(),
-    platformCommit: !!config.platformCommit,
+    platformCommit: config.platformCommit,
   });
 }
 
@@ -76,5 +72,8 @@ export function jsonStripWhitespaces(json: string | null): string | null {
    *
    * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify#parameters
    */
-  return quickStringify(JSON5.parse(json)) ?? null;
+  return (
+    quickStringify(JSON5.parse(json)) ??
+    /* istanbul ignore next: should never happen */ null
+  );
 }

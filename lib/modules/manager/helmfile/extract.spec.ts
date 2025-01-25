@@ -1,3 +1,4 @@
+import { codeBlock } from 'common-tags';
 import { Fixtures } from '../../../../test/fixtures';
 import { fs } from '../../../../test/util';
 import { GlobalConfig } from '../../../config/global';
@@ -12,7 +13,19 @@ describe('modules/manager/helmfile/extract', () => {
   describe('extractPackageFile()', () => {
     beforeEach(() => {
       GlobalConfig.set({ localDir });
-      jest.resetAllMocks();
+    });
+
+    it('skip null YAML document', async () => {
+      const content = codeBlock`
+        ~
+        `;
+      const fileName = 'helmfile.yaml';
+      const result = await extractPackageFile(content, fileName, {
+        registryAliases: {
+          stable: 'https://charts.helm.sh/stable',
+        },
+      });
+      expect(result).toBeNull();
     });
 
     it('returns null if no releases', async () => {
@@ -197,17 +210,30 @@ describe('modules/manager/helmfile/extract', () => {
           registryAliases: {
             stable: 'https://charts.helm.sh/stable',
           },
-        }
+        },
       );
-      expect(result).toMatchSnapshot({
+      expect(result).toMatchObject({
         datasource: 'helm',
         deps: [
           { depName: 'manifests', skipReason: 'local-chart' },
-          { depName: 'rabbitmq', currentValue: '7.4.3' },
-          { depName: 'kube-prometheus-stack', currentValue: '13.7' },
-          { depName: 'invalid', skipReason: 'invalid-name' },
+          {
+            depName: 'rabbitmq',
+            currentValue: '7.4.3',
+            registryUrls: ['https://charts.bitnami.com/bitnami'],
+          },
+          {
+            depName: 'kube-prometheus-stack',
+            currentValue: '13.7',
+            registryUrls: [
+              'https://prometheus-community.github.io/helm-charts',
+            ],
+          },
           { depName: 'external-dns', skipReason: 'invalid-version' },
-          { depName: 'raw' },
+          {
+            depName: 'raw',
+            currentValue: '0.1.0',
+            registryUrls: ['https://charts.helm.sh/incubator/'],
+          },
         ],
         managerData: { needKustomize: true },
       });
@@ -280,9 +306,6 @@ describe('modules/manager/helmfile/extract', () => {
             skipReason: 'invalid-version',
           },
           {
-            skipReason: 'invalid-name',
-          },
-          {
             currentValue: '1.0.0',
             depName: 'example',
           },
@@ -306,6 +329,9 @@ describe('modules/manager/helmfile/extract', () => {
         - name: jenkins
           chart: jenkins/jenkins
           version: 3.3.0
+        - name: oci-url
+          version: 0.4.2
+          chart: oci://ghcr.io/example/oci-repo/url-example
       `;
       const fileName = 'helmfile.yaml';
       const result = await extractPackageFile(content, fileName, {
@@ -325,6 +351,70 @@ describe('modules/manager/helmfile/extract', () => {
           {
             currentValue: '3.3.0',
             depName: 'jenkins',
+            registryUrls: ['https://charts.jenkins.io'],
+          },
+          {
+            currentValue: '0.4.2',
+            depName: 'url-example',
+            datasource: 'docker',
+            packageName: 'ghcr.io/example/oci-repo/url-example',
+          },
+        ],
+      });
+    });
+
+    it('allows OCI chart names containing forward slashes', async () => {
+      const content = `
+      repositories:
+        - name: oci-repo
+          url: ghcr.io/example/oci-repo
+          oci: true
+      releases:
+        - name: nested-example
+          version: 1.2.3
+          chart: oci-repo/nested/path/chart
+      `;
+      const fileName = 'helmfile.yaml';
+      const result = await extractPackageFile(content, fileName, {});
+      expect(result).toMatchObject({
+        datasource: 'helm',
+        deps: [
+          {
+            currentValue: '1.2.3',
+            depName: 'nested/path/chart',
+            datasource: 'docker',
+            packageName: 'ghcr.io/example/oci-repo/nested/path/chart',
+          },
+        ],
+      });
+    });
+
+    it('parses a chart with an oci repository with ---', async () => {
+      const content = codeBlock`
+      repositories:
+        - name: oci-repo
+          url: ghcr.io/example/oci-repo
+          oci: true
+      ---
+      releases:
+        - name: example
+          version: 0.1.0
+          chart: oci-repo/example
+      `;
+      const fileName = 'helmfile.yaml';
+      const result = await extractPackageFile(content, fileName, {
+        registryAliases: {
+          stable: 'https://charts.helm.sh/stable',
+        },
+      });
+      expect(result).toMatchObject({
+        datasource: 'helm',
+        deps: [
+          {
+            currentValue: '0.1.0',
+            depName: 'example',
+            datasource: 'docker',
+            packageName: 'ghcr.io/example/oci-repo/example',
           },
         ],
       });
@@ -340,7 +430,7 @@ describe('modules/manager/helmfile/extract', () => {
           registryAliases: {
             stable: 'https://charts.helm.sh/stable',
           },
-        }
+        },
       );
       expect(result).toMatchObject({
         datasource: 'helm',
@@ -355,10 +445,6 @@ describe('modules/manager/helmfile/extract', () => {
           },
           {
             depName: '',
-            skipReason: 'local-chart',
-          },
-          {
-            depName: null,
             skipReason: 'local-chart',
           },
           {
@@ -378,7 +464,6 @@ describe('modules/manager/helmfile/extract', () => {
             registryUrls: ['https://charts.helm.sh/stable'],
           },
           { depName: 'kube-prometheus-stack', skipReason: 'invalid-version' },
-          { depName: 'example-external', skipReason: 'invalid-name' },
           {
             depName: 'external-dns',
             currentValue: '2.0.0',
@@ -406,7 +491,7 @@ describe('modules/manager/helmfile/extract', () => {
           registryAliases: {
             stable: 'https://charts.helm.sh/stable',
           },
-        }
+        },
       );
       expect(result).toMatchObject({
         datasource: 'helm',
@@ -422,6 +507,33 @@ describe('modules/manager/helmfile/extract', () => {
           },
         ],
         managerData: { needKustomize: true },
+      });
+    });
+
+    it('makes sure url joiner works correctly', async () => {
+      const content = codeBlock`
+      releases:
+        - name: argocd
+          version: 0.4.2
+          chart: oci://gitlab.example.com:5000/group/subgroup
+      `;
+      const fileName = 'helmfile.yaml';
+      const result = await extractPackageFile(content, fileName, {
+        registryAliases: {
+          stable: 'https://charts.helm.sh/stable',
+        },
+      });
+      expect(result).toMatchObject({
+        datasource: 'helm',
+        deps: [
+          {
+            currentValue: '0.4.2',
+            datasource: 'docker',
+            depName: 'subgroup',
+            packageName: 'gitlab.example.com:5000/group/subgroup',
+            registryUrls: [],
+          },
+        ],
       });
     });
   });

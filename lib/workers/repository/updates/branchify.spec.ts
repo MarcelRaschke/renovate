@@ -1,4 +1,5 @@
-import { RenovateConfig, mocked } from '../../../../test/util';
+import type { RenovateConfig } from '../../../../test/util';
+import { mocked } from '../../../../test/util';
 import { getConfig } from '../../../config/defaults';
 import * as _changelog from '../changelog';
 import { branchifyUpgrades } from './branchify';
@@ -13,7 +14,6 @@ jest.mock('../changelog');
 let config: RenovateConfig;
 
 beforeEach(() => {
-  jest.resetAllMocks();
   config = getConfig();
   config.errors = [];
   config.warnings = [];
@@ -124,7 +124,7 @@ describe('workers/repository/updates/branchify', () => {
     });
 
     it('no fetch changelogs', async () => {
-      config.fetchReleaseNotes = 'off';
+      config.fetchChangeLogs = 'off';
       flattenUpdates.mockResolvedValueOnce([
         {
           depName: 'foo',

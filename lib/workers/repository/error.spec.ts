@@ -1,4 +1,5 @@
-import { RenovateConfig, partial } from '../../../test/util';
+import type { RenovateConfig } from '../../../test/util';
+import { partial } from '../../../test/util';
 import {
   CONFIG_SECRETS_EXPOSED,
   CONFIG_VALIDATION,
@@ -18,6 +19,8 @@ import {
   REPOSITORY_DISABLED,
   REPOSITORY_EMPTY,
   REPOSITORY_FORKED,
+  REPOSITORY_FORK_MISSING,
+  REPOSITORY_FORK_MODE_FORKED,
   REPOSITORY_MIRRORED,
   REPOSITORY_NOT_FOUND,
   REPOSITORY_NO_PACKAGE_FILES,
@@ -36,7 +39,6 @@ jest.mock('./error-config');
 let config: RenovateConfig;
 
 beforeEach(() => {
-  jest.resetAllMocks();
   config = partial<RenovateConfig>({ branchList: [] });
 });
 
@@ -48,6 +50,8 @@ describe('workers/repository/error', () => {
       REPOSITORY_DISABLED,
       REPOSITORY_CHANGED,
       REPOSITORY_FORKED,
+      REPOSITORY_FORK_MISSING,
+      REPOSITORY_FORK_MODE_FORKED,
       REPOSITORY_NO_PACKAGE_FILES,
       CONFIG_SECRETS_EXPOSED,
       CONFIG_VALIDATION,
@@ -79,14 +83,14 @@ describe('workers/repository/error', () => {
     it(`handles ExternalHostError`, async () => {
       const res = await handleError(
         config,
-        new ExternalHostError(new Error(), 'some-host-type')
+        new ExternalHostError(new Error(), 'some-host-type'),
       );
       expect(res).toEqual(EXTERNAL_HOST_ERROR);
     });
 
     it('rewrites git 5xx error', async () => {
       const gitError = new Error(
-        "fatal: unable to access 'https://**redacted**@gitlab.com/learnox/learnox.git/': The requested URL returned error: 500\n"
+        "fatal: unable to access 'https://**redacted**@gitlab.com/learnox/learnox.git/': The requested URL returned error: 500\n",
       );
       const res = await handleError(config, gitError);
       expect(res).toEqual(EXTERNAL_HOST_ERROR);
@@ -94,7 +98,7 @@ describe('workers/repository/error', () => {
 
     it('rewrites git remote error', async () => {
       const gitError = new Error(
-        'fatal: remote error: access denied or repository not exported: /b/nw/bd/27/47/159945428/108610112.git\n'
+        'fatal: remote error: access denied or repository not exported: /b/nw/bd/27/47/159945428/108610112.git\n',
       );
       const res = await handleError(config, gitError);
       expect(res).toEqual(EXTERNAL_HOST_ERROR);
@@ -102,7 +106,7 @@ describe('workers/repository/error', () => {
 
     it('rewrites git fatal error', async () => {
       const gitError = new Error(
-        'fatal: not a git repository (or any parent up to mount point /mnt)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n'
+        'fatal: not a git repository (or any parent up to mount point /mnt)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n',
       );
       const res = await handleError(config, gitError);
       expect(res).toEqual(TEMPORARY_ERROR);
