@@ -61,6 +61,12 @@ describe('modules/manager/kustomize/extract', () => {
       expect(res).toBeNull();
     });
 
+    it('should return null for an http base without ref/version', () => {
+      const base = 'https://github.com/user/test-repo.git';
+      const res = extractResource(`${base}?timeout=10s`);
+      expect(res).toBeNull();
+    });
+
     it('should extract out the version of an http base', () => {
       const base = 'https://github.com/user/test-repo.git';
       const version = 'v1.0.0';
@@ -76,7 +82,7 @@ describe('modules/manager/kustomize/extract', () => {
 
     it('should extract the version of a non http base', () => {
       const pkg = extractResource(
-        'ssh://git@bitbucket.com/user/test-repo?ref=v1.2.3'
+        'ssh://git@bitbucket.com/user/test-repo?ref=v1.2.3',
       );
       expect(pkg).toEqual({
         currentValue: 'v1.2.3',
@@ -88,7 +94,7 @@ describe('modules/manager/kustomize/extract', () => {
 
     it('should extract the depName if the URL includes a port number', () => {
       const pkg = extractResource(
-        'ssh://git@bitbucket.com:7999/user/test-repo?ref=v1.2.3'
+        'ssh://git@bitbucket.com:7999/user/test-repo?ref=v1.2.3',
       );
       expect(pkg).toEqual({
         currentValue: 'v1.2.3',
@@ -100,7 +106,7 @@ describe('modules/manager/kustomize/extract', () => {
 
     it('should extract the version of a non http base with subdir', () => {
       const pkg = extractResource(
-        'ssh://git@bitbucket.com/user/test-repo/subdir?ref=v1.2.3'
+        'ssh://git@bitbucket.com/user/test-repo/subdir?ref=v1.2.3',
       );
       expect(pkg).toEqual({
         currentValue: 'v1.2.3',
@@ -148,6 +154,47 @@ describe('modules/manager/kustomize/extract', () => {
       const pkg = extractResource(`${base}?ref=${version}`);
       expect(pkg).toEqual(sample);
     });
+
+    it('should extract out the version of an http base with additional params', () => {
+      const base = 'https://github.com/user/test-repo.git';
+      const version = 'v1.0.0';
+      const sample = {
+        currentValue: version,
+        datasource: GithubTagsDatasource.id,
+        depName: 'user/test-repo',
+      };
+
+      const pkg = extractResource(
+        `${base}?timeout=120&ref=${version}&submodules=false&version=v1`,
+      );
+      expect(pkg).toEqual(sample);
+    });
+
+    it('should extract out the version of an http base from first version param', () => {
+      const base = 'https://github.com/user/test-repo.git';
+      const version = 'v1.0.0';
+      const sample = {
+        currentValue: version,
+        datasource: GithubTagsDatasource.id,
+        depName: 'user/test-repo',
+      };
+
+      const pkg = extractResource(`${base}?version=${version}&version=v0`);
+      expect(pkg).toEqual(sample);
+    });
+
+    it('should extract out the version of an http base from first ref param', () => {
+      const base = 'https://github.com/user/test-repo.git';
+      const version = 'v1.0.0';
+      const sample = {
+        currentValue: version,
+        datasource: GithubTagsDatasource.id,
+        depName: 'user/test-repo',
+      };
+
+      const pkg = extractResource(`${base}?ref=${version}&ref=v0`);
+      expect(pkg).toEqual(sample);
+    });
   });
 
   describe('extractHelmChart', () => {
@@ -175,6 +222,22 @@ describe('modules/manager/kustomize/extract', () => {
       });
       expect(pkg).toEqual(sample);
     });
+
+    it('should correctly extract an OCI chart', () => {
+      const sample = {
+        depName: 'redis',
+        packageName: 'registry-1.docker.io/bitnamicharts/redis',
+        currentValue: '18.12.1',
+        datasource: DockerDatasource.id,
+        pinDigests: false,
+      };
+      const pkg = extractHelmChart({
+        name: sample.depName,
+        version: sample.currentValue,
+        repo: 'oci://registry-1.docker.io/bitnamicharts',
+      });
+      expect(pkg).toEqual(sample);
+    });
   });
 
   describe('image extraction', () => {
@@ -186,13 +249,25 @@ describe('modules/manager/kustomize/extract', () => {
       expect(pkg).toBeNull();
     });
 
+    it('should return null on invalid input', () => {
+      const pkg = extractImage({
+        // @ts-expect-error: for testing
+        name: 3,
+        newTag: '',
+      });
+      expect(pkg).toBeNull();
+    });
+
     it('should correctly extract a default image', () => {
       const sample = {
+        autoReplaceStringTemplate:
+          '{{newValue}}{{#if newDigest}}@{{newDigest}}{{/if}}',
         currentDigest: undefined,
         currentValue: 'v1.0.0',
         datasource: DockerDatasource.id,
         replaceString: 'v1.0.0',
         depName: 'node',
+        packageName: 'node',
       };
       const pkg = extractImage({
         name: sample.depName,
@@ -203,11 +278,14 @@ describe('modules/manager/kustomize/extract', () => {
 
     it('should correctly extract an image in a repo', () => {
       const sample = {
+        autoReplaceStringTemplate:
+          '{{newValue}}{{#if newDigest}}@{{newDigest}}{{/if}}',
         currentDigest: undefined,
         currentValue: 'v1.0.0',
         datasource: DockerDatasource.id,
         replaceString: 'v1.0.0',
         depName: 'test/node',
+        packageName: 'test/node',
       };
       const pkg = extractImage({
         name: sample.depName,
@@ -218,11 +296,14 @@ describe('modules/manager/kustomize/extract', () => {
 
     it('should correctly extract from a different registry', () => {
       const sample = {
+        autoReplaceStringTemplate:
+          '{{newValue}}{{#if newDigest}}@{{newDigest}}{{/if}}',
         currentDigest: undefined,
         currentValue: 'v1.0.0',
         datasource: DockerDatasource.id,
         replaceString: 'v1.0.0',
         depName: 'quay.io/repo/image',
+        packageName: 'quay.io/repo/image',
       };
       const pkg = extractImage({
         name: sample.depName,
@@ -233,11 +314,14 @@ describe('modules/manager/kustomize/extract', () => {
 
     it('should correctly extract from a different port', () => {
       const sample = {
+        autoReplaceStringTemplate:
+          '{{newValue}}{{#if newDigest}}@{{newDigest}}{{/if}}',
         currentDigest: undefined,
         currentValue: 'v1.0.0',
         datasource: DockerDatasource.id,
         replaceString: 'v1.0.0',
         depName: 'localhost:5000/repo/image',
+        packageName: 'localhost:5000/repo/image',
       };
       const pkg = extractImage({
         name: sample.depName,
@@ -248,11 +332,14 @@ describe('modules/manager/kustomize/extract', () => {
 
     it('should correctly extract from a multi-depth registry', () => {
       const sample = {
+        autoReplaceStringTemplate:
+          '{{newValue}}{{#if newDigest}}@{{newDigest}}{{/if}}',
         currentDigest: undefined,
         currentValue: 'v1.0.0',
         replaceString: 'v1.0.0',
         datasource: DockerDatasource.id,
         depName: 'localhost:5000/repo/image/service',
+        packageName: 'localhost:5000/repo/image/service',
       };
       const pkg = extractImage({
         name: sample.depName,
@@ -260,33 +347,68 @@ describe('modules/manager/kustomize/extract', () => {
       });
       expect(pkg).toEqual(sample);
     });
+
+    it('should correctly extract with registryAliases', () => {
+      const sample = {
+        autoReplaceStringTemplate:
+          '{{newValue}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+        currentDigest: undefined,
+        currentValue: 'v1.0.0',
+        replaceString: 'v1.0.0',
+        datasource: DockerDatasource.id,
+        depName: 'localhost:5000/repo/image/service',
+        packageName: 'docker.io/image/service',
+      };
+      const pkg = extractImage(
+        {
+          name: 'localhost:5000/repo/image/service',
+          newTag: sample.currentValue,
+        },
+        { 'localhost:5000/repo': 'docker.io' },
+      );
+      expect(pkg).toEqual(sample);
+    });
   });
 
   describe('extractPackageFile()', () => {
     it('returns null for non kustomize kubernetes files', () => {
-      expect(extractPackageFile(nonKustomize)).toBeNull();
+      expect(
+        extractPackageFile(nonKustomize, 'kustomization.yaml', {}),
+      ).toBeNull();
     });
 
     it('extracts multiple image lines', () => {
-      const res = extractPackageFile(kustomizeWithLocal);
+      const res = extractPackageFile(
+        kustomizeWithLocal,
+        'kustomization.yaml',
+        {},
+      );
       expect(res?.deps).toMatchSnapshot();
       expect(res?.deps).toHaveLength(2);
     });
 
     it('extracts ssh dependency', () => {
-      const res = extractPackageFile(kustomizeGitSSHBase);
+      const res = extractPackageFile(
+        kustomizeGitSSHBase,
+        'kustomization.yaml',
+        {},
+      );
       expect(res?.deps).toMatchSnapshot();
       expect(res?.deps).toHaveLength(1);
     });
 
     it('extracts ssh dependency with a subdir', () => {
-      const res = extractPackageFile(kustomizeGitSSHSubdir);
+      const res = extractPackageFile(
+        kustomizeGitSSHSubdir,
+        'kustomization.yaml',
+        {},
+      );
       expect(res?.deps).toMatchSnapshot();
       expect(res?.deps).toHaveLength(1);
     });
 
     it('extracts http dependency', () => {
-      const res = extractPackageFile(kustomizeHTTP);
+      const res = extractPackageFile(kustomizeHTTP, 'kustomization.yaml', {});
       expect(res?.deps).toMatchSnapshot();
       expect(res?.deps).toHaveLength(2);
       expect(res?.deps[0].currentValue).toBe('v0.0.1');
@@ -295,7 +417,7 @@ describe('modules/manager/kustomize/extract', () => {
     });
 
     it('should extract out image versions', () => {
-      const res = extractPackageFile(gitImages);
+      const res = extractPackageFile(gitImages, 'kustomization.yaml', {});
       expect(res?.deps).toMatchSnapshot();
       expect(res?.deps).toHaveLength(6);
       expect(res?.deps[0].currentValue).toBe('v0.1.0');
@@ -304,15 +426,21 @@ describe('modules/manager/kustomize/extract', () => {
     });
 
     it('ignores non-Kubernetes empty files', () => {
-      expect(extractPackageFile('')).toBeNull();
+      expect(extractPackageFile('', 'kustomization.yaml', {})).toBeNull();
     });
 
     it('does nothing with kustomize empty kustomize files', () => {
-      expect(extractPackageFile(kustomizeEmpty)).toBeNull();
+      expect(
+        extractPackageFile(kustomizeEmpty, 'kustomization.yaml', {}),
+      ).toBeNull();
     });
 
     it('should extract bases resources and components from their respective blocks', () => {
-      const res = extractPackageFile(kustomizeDepsInResources);
+      const res = extractPackageFile(
+        kustomizeDepsInResources,
+        'kustomization.yaml',
+        {},
+      );
       expect(res).not.toBeNull();
       expect(res?.deps).toMatchSnapshot();
       expect(res?.deps).toHaveLength(3);
@@ -328,7 +456,11 @@ describe('modules/manager/kustomize/extract', () => {
     });
 
     it('should extract dependencies when kind is Component', () => {
-      const res = extractPackageFile(kustomizeComponent);
+      const res = extractPackageFile(
+        kustomizeComponent,
+        'kustomization.yaml',
+        {},
+      );
       expect(res).not.toBeNull();
       expect(res?.deps).toMatchSnapshot();
       expect(res?.deps).toHaveLength(3);
@@ -347,7 +479,9 @@ describe('modules/manager/kustomize/extract', () => {
       'sha256:b0cfe264cb1143c7c660ddfd5c482464997d62d6bc9f97f8fdf3deefce881a8c';
 
     it('extracts from newTag', () => {
-      expect(extractPackageFile(newTag)).toMatchSnapshot({
+      expect(
+        extractPackageFile(newTag, 'kustomization.yaml', {}),
+      ).toMatchSnapshot({
         deps: [
           {
             currentDigest: undefined,
@@ -367,7 +501,9 @@ describe('modules/manager/kustomize/extract', () => {
     });
 
     it('extracts from digest', () => {
-      expect(extractPackageFile(digest)).toMatchSnapshot({
+      expect(
+        extractPackageFile(digest, 'kustomization.yaml', {}),
+      ).toMatchSnapshot({
         deps: [
           {
             currentDigest: postgresDigest,
@@ -393,7 +529,9 @@ describe('modules/manager/kustomize/extract', () => {
     });
 
     it('extracts newName', () => {
-      expect(extractPackageFile(newName)).toMatchSnapshot({
+      expect(
+        extractPackageFile(newName, 'kustomization.yaml', {}),
+      ).toMatchSnapshot({
         deps: [
           {
             depName: 'awesome/postgres',
@@ -421,14 +559,27 @@ describe('modules/manager/kustomize/extract', () => {
     });
 
     it('parses helmChart field', () => {
-      const res = extractPackageFile(kustomizeHelmChart);
+      const res = extractPackageFile(
+        kustomizeHelmChart,
+        'kustomization.yaml',
+        {},
+      );
       expect(res).toMatchSnapshot({
         deps: [
           {
             depType: 'HelmChart',
             depName: 'minecraft',
             currentValue: '3.1.3',
+            datasource: HelmDatasource.id,
             registryUrls: ['https://itzg.github.io/minecraft-server-charts'],
+          },
+          {
+            depType: 'HelmChart',
+            depName: 'redis',
+            currentValue: '18.12.1',
+            datasource: DockerDatasource.id,
+            packageName: 'registry-1.docker.io/bitnamicharts/redis',
+            pinDigests: false,
           },
         ],
       });
@@ -714,7 +865,7 @@ describe('modules/manager/kustomize/extract', () => {
 
         const pkg = extractResource(`${url}?ref=${version}`);
         expect(pkg).toEqual(sample);
-      }
+      },
     );
   });
 });

@@ -2,7 +2,12 @@ import { z } from 'zod';
 import { logger } from '../../../logger';
 import { readLocalFile } from '../../../util/fs';
 import { regEx } from '../../../util/regex';
-import { Json, LooseArray, LooseRecord } from '../../../util/schema-utils';
+import {
+  Json,
+  LooseArray,
+  LooseRecord,
+  withDebugMessage,
+} from '../../../util/schema-utils';
 import { BitbucketTagsDatasource } from '../../datasource/bitbucket-tags';
 import { GitTagsDatasource } from '../../datasource/git-tags';
 import { GithubTagsDatasource } from '../../datasource/github-tags';
@@ -62,7 +67,7 @@ const DisablePackagist = z.object({ type: z.literal('disable-packagist') });
 export type DisablePackagist = z.infer<typeof DisablePackagist>;
 
 const bitbucketUrlRegex = regEx(
-  /^(?:https:\/\/|git@)bitbucket\.org[/:](?<packageName>[^/]+\/[^/]+?)(?:\.git)?$/
+  /^(?:https:\/\/|git@)bitbucket\.org[/:](?<packageName>[^/]+\/[^/]+?)(?:\.git)?$/,
 );
 
 export const ReposRecord = LooseRecord(z.union([Repo, z.literal(false)]), {
@@ -108,7 +113,7 @@ export const ReposArray = LooseArray(
     onError: ({ error: err }) => {
       logger.debug({ err }, 'Composer: error parsing repositories array');
     },
-  }
+  },
 ).transform((repos) => {
   const result: (NamedRepo | DisablePackagist)[] = [];
   for (let idx = 0; idx < repos.length; idx++) {
@@ -126,10 +131,7 @@ export type ReposArray = z.infer<typeof ReposArray>;
 export const Repos = z
   .union([ReposRecord, ReposArray])
   .default([]) // Prevents warnings for packages without repositories field
-  .catch(({ error: err }) => {
-    logger.debug({ err }, 'Composer: invalid "repositories" field');
-    return [];
-  })
+  .catch(withDebugMessage([], 'Composer: invalid "repositories" field'))
   .transform((repos) => {
     let packagist = true;
     const repoUrls: string[] = [];
@@ -158,7 +160,7 @@ export const Repos = z
 export type Repos = z.infer<typeof Repos>;
 
 const RequireDefs = LooseRecord(z.string().transform((x) => x.trim())).catch(
-  {}
+  {},
 );
 
 export const PackageFile = z
@@ -189,7 +191,7 @@ export const PackageFile = z
       repositories,
       require,
       requireDev,
-    })
+    }),
   );
 export type PackageFile = z.infer<typeof PackageFile>;
 
@@ -210,7 +212,7 @@ export const Lockfile = z
       'plugin-api-version': pluginApiVersion,
       packages,
       'packages-dev': packagesDev,
-    }) => ({ pluginApiVersion, packages, packagesDev })
+    }) => ({ pluginApiVersion, packages, packagesDev }),
   );
 export type Lockfile = z.infer<typeof Lockfile>;
 
@@ -242,13 +244,12 @@ export const ComposerExtract = z
               .pipe(Json)
               .pipe(Lockfile)
               .nullable()
-              .catch(({ error: err }) => {
-                logger.debug({ err }, 'Composer: lockfile parsing error');
-                return null;
-              }),
-          ])
+              .catch(
+                withDebugMessage(null, 'Composer: lockfile parsing error'),
+              ),
+          ]),
         ),
-    })
+    }),
   )
   .transform(({ file, lockfile, lockfileName }) => {
     const { composerJsonType, require, requireDev } = file;
@@ -310,7 +311,7 @@ export const ComposerExtract = z
         const gitRepo = gitRepos[depName];
         if (gitRepo) {
           const bitbucketMatchGroups = bitbucketUrlRegex.exec(
-            gitRepo.url
+            gitRepo.url,
           )?.groups;
 
           if (bitbucketMatchGroups) {

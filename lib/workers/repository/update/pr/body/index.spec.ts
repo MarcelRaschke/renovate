@@ -40,7 +40,7 @@ describe('workers/repository/update/pr/body/index', () => {
     beforeEach(() => {
       changelogs.getChangelogs.mockReturnValueOnce('getChangelogs');
       configDescription.getPrConfigDescription.mockReturnValueOnce(
-        'getPrConfigDescription'
+        'getPrConfigDescription',
       );
       controls.getControls.mockReturnValueOnce('getControls');
       footer.getPrFooter.mockReturnValueOnce('getPrFooter');
@@ -65,7 +65,7 @@ describe('workers/repository/update/pr/body/index', () => {
             targetBranch: 'base',
           },
         },
-        {}
+        {},
       );
       expect(res).toBeEmptyString();
     });
@@ -75,10 +75,26 @@ describe('workers/repository/update/pr/body/index', () => {
         manager: 'some-manager',
         branchName: 'some-branch',
         dependencyUrl: 'https://github.com/foo/bar',
-        sourceUrl: 'https://github.com/foo/bar.git',
+        sourceUrl: 'https://github.com/foo/bar',
         sourceDirectory: '/baz',
         changelogUrl:
           'https://raw.githubusercontent.com/foo/bar/tree/main/CHANGELOG.md',
+        homepage: 'https://example.com',
+      };
+
+      const upgrade1 = {
+        manager: 'some-manager',
+        branchName: 'some-branch',
+        sourceUrl: 'https://github.com/foo/bar',
+        homepage: 'https://example.com',
+      };
+
+      const upgradeBitbucket = {
+        manager: 'some-manager',
+        branchName: 'some-branch',
+        sourceUrl: 'https://bitbucket.org/foo/bar',
+        sourceDirectory: '/baz',
+        changelogUrl: 'https://bitbucket.org/foo/bar/src/main/CHANGELOG.md',
         homepage: 'https://example.com',
       };
 
@@ -87,7 +103,7 @@ describe('workers/repository/update/pr/body/index', () => {
           manager: 'some-manager',
           baseBranch: 'base',
           branchName: 'some-branch',
-          upgrades: [upgrade],
+          upgrades: [upgrade, upgrade1, upgradeBitbucket],
         },
         {
           debugData: {
@@ -96,7 +112,7 @@ describe('workers/repository/update/pr/body/index', () => {
             targetBranch: 'base',
           },
         },
-        {}
+        {},
       );
 
       expect(upgrade).toMatchObject({
@@ -104,13 +120,31 @@ describe('workers/repository/update/pr/body/index', () => {
         changelogUrl:
           'https://raw.githubusercontent.com/foo/bar/tree/main/CHANGELOG.md',
         depNameLinked:
-          '[undefined](https://example.com) ([source](https://github.com/foo/bar.git), [changelog](https://raw.githubusercontent.com/foo/bar/tree/main/CHANGELOG.md))',
+          '[undefined](https://example.com) ([source](https://github.com/foo/bar/tree/HEAD/baz), [changelog](https://raw.githubusercontent.com/foo/bar/tree/main/CHANGELOG.md))',
         dependencyUrl: 'https://github.com/foo/bar',
         homepage: 'https://example.com',
         references:
-          '[homepage](https://example.com), [source](https://github.com/foo/bar.git/tree/HEAD/baz), [changelog](https://raw.githubusercontent.com/foo/bar/tree/main/CHANGELOG.md)',
+          '[homepage](https://example.com), [source](https://github.com/foo/bar/tree/HEAD/baz), [changelog](https://raw.githubusercontent.com/foo/bar/tree/main/CHANGELOG.md)',
         sourceDirectory: '/baz',
-        sourceUrl: 'https://github.com/foo/bar.git',
+        sourceUrl: 'https://github.com/foo/bar',
+      });
+      expect(upgrade1).toMatchObject({
+        branchName: 'some-branch',
+        depNameLinked:
+          '[undefined](https://example.com) ([source](https://github.com/foo/bar))',
+        references:
+          '[homepage](https://example.com), [source](https://github.com/foo/bar)',
+        homepage: 'https://example.com',
+        sourceUrl: 'https://github.com/foo/bar',
+      });
+      expect(upgradeBitbucket).toMatchObject({
+        branchName: 'some-branch',
+        depNameLinked:
+          '[undefined](https://example.com) ([source](https://bitbucket.org/foo/bar/src/HEAD/baz), [changelog](https://bitbucket.org/foo/bar/src/main/CHANGELOG.md))',
+        references:
+          '[homepage](https://example.com), [source](https://bitbucket.org/foo/bar/src/HEAD/baz), [changelog](https://bitbucket.org/foo/bar/src/main/CHANGELOG.md)',
+        homepage: 'https://example.com',
+        sourceUrl: 'https://bitbucket.org/foo/bar',
       });
     });
 
@@ -135,7 +169,7 @@ describe('workers/repository/update/pr/body/index', () => {
             targetBranch: 'base',
           },
         },
-        {}
+        {},
       );
 
       expect(upgrade).toMatchObject({
@@ -164,7 +198,7 @@ describe('workers/repository/update/pr/body/index', () => {
             targetBranch: 'base',
           },
         },
-        {}
+        {},
       );
       expect(res).toContain('PR BODY');
       expect(res).toContain(`<!--renovate-debug`);
@@ -189,7 +223,7 @@ describe('workers/repository/update/pr/body/index', () => {
             targetBranch: 'base',
           },
         },
-        {}
+        {},
       );
       expect(res).toContain(['aaa', '**Rebasing**: BAR', 'bbb'].join('\n'));
     });
@@ -212,7 +246,7 @@ describe('workers/repository/update/pr/body/index', () => {
             targetBranch: 'base',
           },
         },
-        {}
+        {},
       );
 
       const match = prDebugDataRe.exec(res);
@@ -262,7 +296,7 @@ describe('workers/repository/update/pr/body/index', () => {
             targetBranch: 'base',
           },
         },
-        {}
+        {},
       );
       const expected =
         '---\n\n### ⚠ Dependency Lookup Warnings ⚠' +

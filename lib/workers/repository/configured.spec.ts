@@ -1,10 +1,10 @@
-import { RenovateConfig, partial } from '../../../test/util';
+import type { RenovateConfig } from '../../../test/util';
+import { partial } from '../../../test/util';
 import { checkIfConfigured } from './configured';
 
 let config: RenovateConfig;
 
 beforeEach(() => {
-  jest.resetAllMocks();
   config = partial<RenovateConfig>({
     enabled: true,
     forkProcessing: 'auto',

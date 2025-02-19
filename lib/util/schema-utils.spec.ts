@@ -1,14 +1,19 @@
 import { codeBlock } from 'common-tags';
 import { z } from 'zod';
+import { logger } from '../../test/util';
 import {
   Json,
   Json5,
+  Jsonc,
   LooseArray,
   LooseRecord,
+  MultidocYaml,
   Toml,
-  Url,
   UtcDate,
   Yaml,
+  multidocYaml,
+  withDebugMessage,
+  withTraceMessage,
 } from './schema-utils';
 
 describe('util/schema-utils', () => {
@@ -65,7 +70,7 @@ describe('util/schema-utils', () => {
           .string()
           .refine((x) => x === 'bar')
           .transform((x) => x.toUpperCase()),
-        z.string().transform((x) => x.toUpperCase())
+        z.string().transform((x) => x.toUpperCase()),
       );
       expect(s.parse({ foo: 'foo', bar: 'bar' })).toEqual({ BAR: 'BAR' });
     });
@@ -79,7 +84,7 @@ describe('util/schema-utils', () => {
           onError: (x) => {
             errorData = x;
           },
-        }
+        },
       );
 
       s.parse({ foo: 'foo', bar: 'bar' });
@@ -106,7 +111,7 @@ describe('util/schema-utils', () => {
           onError: ({ error }) => {
             err = error;
           },
-        }
+        },
       );
 
       const res = Schema.parse({
@@ -269,10 +274,76 @@ describe('util/schema-utils', () => {
     });
   });
 
+  describe('Jsonc', () => {
+    it('parses JSONC', () => {
+      const Schema = Jsonc.pipe(z.object({ foo: z.literal('bar') }));
+
+      expect(Schema.parse('{"foo": "bar"}')).toEqual({ foo: 'bar' });
+
+      expect(Schema.safeParse(42)).toMatchObject({
+        error: {
+          issues: [
+            {
+              message: 'Expected string, received number',
+              code: 'invalid_type',
+              expected: 'string',
+              received: 'number',
+              path: [],
+            },
+          ],
+        },
+        success: false,
+      });
+
+      expect(Schema.safeParse('{"foo": "foo"}')).toMatchObject({
+        error: {
+          issues: [
+            {
+              message: 'Invalid literal value, expected "bar"',
+              code: 'invalid_literal',
+              expected: 'bar',
+              received: 'foo',
+              path: ['foo'],
+            },
+          ],
+        },
+        success: false,
+      });
+
+      expect(Schema.safeParse('["foo", "bar"]')).toMatchObject({
+        error: {
+          issues: [
+            {
+              message: 'Expected object, received array',
+              code: 'invalid_type',
+              expected: 'object',
+              received: 'array',
+              path: [],
+            },
+          ],
+        },
+        success: false,
+      });
+
+      expect(Schema.safeParse('{')).toMatchObject({
+        error: {
+          issues: [
+            {
+              message: 'Invalid JSONC',
+              code: 'custom',
+              path: [],
+            },
+          ],
+        },
+        success: false,
+      });
+    });
+  });
+
   describe('UtcDate', () => {
     it('parses date', () => {
       expect(UtcDate.parse('2020-04-04').toString()).toBe(
-        '2020-04-04T00:00:00.000Z'
+        '2020-04-04T00:00:00.000Z',
       );
     });
 
@@ -281,27 +352,9 @@ describe('util/schema-utils', () => {
     });
   });
 
-  describe('Url', () => {
-    it('parses valid URLs', () => {
-      const urlStr = 'https://www.example.com/foo/bar?baz=qux';
-      const parsedUrl = Url.parse(urlStr);
-      expect(parsedUrl).toMatchObject({
-        protocol: 'https:',
-        hostname: 'www.example.com',
-        pathname: '/foo/bar',
-        search: '?baz=qux',
-      });
-    });
-
-    it('throws an error for invalid URLs', () => {
-      const urlStr = 'invalid-url-string';
-      expect(() => Url.parse(urlStr)).toThrow('Invalid URL');
-    });
-  });
-
   describe('Yaml', () => {
     const Schema = Yaml.pipe(
-      z.object({ foo: z.array(z.object({ bar: z.literal('baz') })) })
+      z.object({ foo: z.array(z.object({ bar: z.literal('baz') })) }),
     );
 
     it('parses valid yaml', () => {
@@ -343,9 +396,81 @@ describe('util/schema-utils', () => {
     });
   });
 
+  describe('MultidocYaml', () => {
+    const Schema = MultidocYaml.pipe(
+      z.array(
+        z.object({
+          foo: z.number(),
+        }),
+      ),
+    );
+
+    it('parses valid yaml', () => {
+      expect(
+        Schema.parse(codeBlock`
+          foo: 111
+          ---
+          foo: 222
+        `),
+      ).toEqual([{ foo: 111 }, { foo: 222 }]);
+    });
+
+    it('throws error for non-string', () => {
+      expect(Schema.safeParse(42)).toMatchObject({
+        error: {
+          issues: [
+            {
+              message: 'Expected string, received number',
+              code: 'invalid_type',
+              expected: 'string',
+              received: 'number',
+              path: [],
+            },
+          ],
+        },
+        success: false,
+      });
+    });
+
+    it('throws error for invalid yaml', () => {
+      expect(Schema.safeParse('clearly: "invalid" "yaml"')).toMatchObject({
+        error: {
+          issues: [
+            {
+              message: 'Invalid YAML',
+              code: 'custom',
+              path: [],
+            },
+          ],
+        },
+        success: false,
+      });
+    });
+  });
+
+  describe('multidocYaml()', () => {
+    const Schema = multidocYaml().pipe(
+      z.array(
+        z.object({
+          foo: z.number(),
+        }),
+      ),
+    );
+
+    it('parses valid yaml', () => {
+      expect(
+        Schema.parse(codeBlock`
+          foo: 111
+          ---
+          foo: 222
+        `),
+      ).toEqual([{ foo: 111 }, { foo: 222 }]);
+    });
+  });
+
   describe('Toml', () => {
     const Schema = Toml.pipe(
-      z.object({ foo: z.object({ bar: z.literal('baz') }) })
+      z.object({ foo: z.object({ bar: z.literal('baz') }) }),
     );
 
     it('parses valid toml', () => {
@@ -391,6 +516,36 @@ describe('util/schema-utils', () => {
         },
         success: false,
       });
+    });
+  });
+
+  describe('logging utils', () => {
+    it('logs debug message and returns fallback value', () => {
+      const Schema = z
+        .string()
+        .catch(withDebugMessage('default string', 'Debug message'));
+
+      const result = Schema.parse(42);
+
+      expect(result).toBe('default string');
+      expect(logger.logger.debug).toHaveBeenCalledWith(
+        { err: expect.any(z.ZodError) },
+        'Debug message',
+      );
+    });
+
+    it('logs trace message and returns fallback value', () => {
+      const Schema = z
+        .string()
+        .catch(withTraceMessage('default string', 'Trace message'));
+
+      const result = Schema.parse(42);
+
+      expect(result).toBe('default string');
+      expect(logger.logger.trace).toHaveBeenCalledWith(
+        { err: expect.any(z.ZodError) },
+        'Trace message',
+      );
     });
   });
 });

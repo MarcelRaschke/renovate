@@ -1,9 +1,19 @@
-import { JsonMap, parse } from '@iarna/toml';
-import { load } from 'js-yaml';
 import JSON5 from 'json5';
+import * as JSONC from 'jsonc-parser';
 import { DateTime } from 'luxon';
-import type { JsonValue } from 'type-fest';
-import { z } from 'zod';
+import type { JsonArray, JsonValue } from 'type-fest';
+import {
+  type ZodEffects,
+  type ZodString,
+  type ZodType,
+  type ZodTypeDef,
+  z,
+} from 'zod';
+import { logger } from '../logger';
+import type { PackageDependency } from '../modules/manager/types';
+import { parse as parseToml } from './toml';
+import type { YamlOptions } from './yaml';
+import { parseSingleYaml, parseYaml } from './yaml';
 
 interface ErrorContext<T> {
   error: z.ZodError;
@@ -26,7 +36,7 @@ interface LooseOpts<T> {
  */
 export function LooseArray<Schema extends z.ZodTypeAny>(
   Elem: Schema,
-  { onError }: LooseOpts<unknown[]> = {}
+  { onError }: LooseOpts<unknown[]> = {},
 ): z.ZodEffects<z.ZodArray<z.ZodAny, 'many'>, z.TypeOf<Schema>[], any[]> {
   if (!onError) {
     // Avoid error-related computations inside the loop
@@ -72,7 +82,7 @@ export function LooseArray<Schema extends z.ZodTypeAny>(
 
 type LooseRecordResult<
   KeySchema extends z.ZodTypeAny,
-  ValueSchema extends z.ZodTypeAny
+  ValueSchema extends z.ZodTypeAny,
 > = z.ZodEffects<
   z.ZodRecord<z.ZodString, z.ZodAny>,
   Record<z.TypeOf<KeySchema>, z.TypeOf<ValueSchema>>,
@@ -81,7 +91,7 @@ type LooseRecordResult<
 
 type LooseRecordOpts<
   KeySchema extends z.ZodTypeAny,
-  ValueSchema extends z.ZodTypeAny
+  ValueSchema extends z.ZodTypeAny,
 > = LooseOpts<Record<z.TypeOf<KeySchema> | z.TypeOf<ValueSchema>, unknown>>;
 
 /**
@@ -96,34 +106,34 @@ type LooseRecordOpts<
  * @returns Schema for record
  */
 export function LooseRecord<ValueSchema extends z.ZodTypeAny>(
-  Value: ValueSchema
+  Value: ValueSchema,
 ): LooseRecordResult<z.ZodString, ValueSchema>;
 export function LooseRecord<
   KeySchema extends z.ZodTypeAny,
-  ValueSchema extends z.ZodTypeAny
+  ValueSchema extends z.ZodTypeAny,
 >(
   Key: KeySchema,
-  Value: ValueSchema
+  Value: ValueSchema,
 ): LooseRecordResult<KeySchema, ValueSchema>;
 export function LooseRecord<ValueSchema extends z.ZodTypeAny>(
   Value: ValueSchema,
-  { onError }: LooseRecordOpts<z.ZodString, ValueSchema>
+  { onError }: LooseRecordOpts<z.ZodString, ValueSchema>,
 ): LooseRecordResult<z.ZodString, ValueSchema>;
 export function LooseRecord<
   KeySchema extends z.ZodTypeAny,
-  ValueSchema extends z.ZodTypeAny
+  ValueSchema extends z.ZodTypeAny,
 >(
   Key: KeySchema,
   Value: ValueSchema,
-  { onError }: LooseRecordOpts<KeySchema, ValueSchema>
+  { onError }: LooseRecordOpts<KeySchema, ValueSchema>,
 ): LooseRecordResult<KeySchema, ValueSchema>;
 export function LooseRecord<
   KeySchema extends z.ZodTypeAny,
-  ValueSchema extends z.ZodTypeAny
+  ValueSchema extends z.ZodTypeAny,
 >(
   arg1: ValueSchema | KeySchema,
   arg2?: ValueSchema | LooseOpts<Record<string, unknown>>,
-  arg3?: LooseRecordOpts<KeySchema, ValueSchema>
+  arg3?: LooseRecordOpts<KeySchema, ValueSchema>,
 ): LooseRecordResult<KeySchema, ValueSchema> {
   let Key: z.ZodSchema = z.any();
   let Value: ValueSchema;
@@ -199,7 +209,7 @@ export function LooseRecord<
 export const Json = z.string().transform((str, ctx): JsonValue => {
   try {
     return JSON.parse(str);
-  } catch (e) {
+  } catch {
     ctx.addIssue({ code: 'custom', message: 'Invalid JSON' });
     return z.NEVER;
   }
@@ -209,10 +219,20 @@ type Json = z.infer<typeof Json>;
 export const Json5 = z.string().transform((str, ctx): JsonValue => {
   try {
     return JSON5.parse(str);
-  } catch (e) {
+  } catch {
     ctx.addIssue({ code: 'custom', message: 'Invalid JSON5' });
     return z.NEVER;
   }
+});
+
+export const Jsonc = z.string().transform((str, ctx): JsonValue => {
+  const errors: JSONC.ParseError[] = [];
+  const value = JSONC.parse(str, errors, { allowTrailingComma: true });
+  if (errors.length === 0) {
+    return value;
+  }
+  ctx.addIssue({ code: 'custom', message: 'Invalid JSONC' });
+  return z.NEVER;
 });
 
 export const UtcDate = z
@@ -226,29 +246,76 @@ export const UtcDate = z
     return date;
   });
 
-export const Url = z.string().transform((str, ctx): URL => {
-  try {
-    return new URL(str);
-  } catch (e) {
-    ctx.addIssue({ code: 'custom', message: 'Invalid URL' });
-    return z.NEVER;
-  }
-});
-
 export const Yaml = z.string().transform((str, ctx): JsonValue => {
   try {
-    return load(str, { json: true }) as JsonValue;
-  } catch (e) {
+    return parseSingleYaml(str);
+  } catch {
     ctx.addIssue({ code: 'custom', message: 'Invalid YAML' });
     return z.NEVER;
   }
 });
 
-export const Toml = z.string().transform((str, ctx): JsonMap => {
+export const MultidocYaml = z.string().transform((str, ctx): JsonArray => {
   try {
-    return parse(str);
-  } catch (e) {
+    return parseYaml(str) as JsonArray;
+  } catch {
+    ctx.addIssue({ code: 'custom', message: 'Invalid YAML' });
+    return z.NEVER;
+  }
+});
+
+export function multidocYaml(
+  opts?: Omit<YamlOptions, 'customSchema'>,
+): ZodEffects<ZodString, JsonArray, string> {
+  return z.string().transform((str, ctx): JsonArray => {
+    try {
+      return parseYaml(str, opts) as JsonArray;
+    } catch {
+      ctx.addIssue({ code: 'custom', message: 'Invalid YAML' });
+      return z.NEVER;
+    }
+  });
+}
+
+export const Toml = z.string().transform((str, ctx) => {
+  try {
+    return parseToml(str);
+  } catch {
     ctx.addIssue({ code: 'custom', message: 'Invalid TOML' });
     return z.NEVER;
   }
 });
+
+export function withDepType<
+  Output extends PackageDependency[],
+  Schema extends ZodType<Output, ZodTypeDef, unknown>,
+>(schema: Schema, depType: string, force: boolean = true): ZodEffects<Schema> {
+  return schema.transform((deps) => {
+    for (const dep of deps) {
+      if (!dep.depType || force) {
+        dep.depType = depType;
+      }
+    }
+    return deps;
+  });
+}
+
+export function withDebugMessage<Input, Output>(
+  value: Output,
+  msg: string,
+): (ctx: { error: z.ZodError; input: Input }) => Output {
+  return ({ error: err }) => {
+    logger.debug({ err }, msg);
+    return value;
+  };
+}
+
+export function withTraceMessage<Input, Output>(
+  value: Output,
+  msg: string,
+): (ctx: { error: z.ZodError; input: Input }) => Output {
+  return ({ error: err }) => {
+    logger.trace({ err }, msg);
+    return value;
+  };
+}

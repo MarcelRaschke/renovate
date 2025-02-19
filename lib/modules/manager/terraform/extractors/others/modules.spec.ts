@@ -4,6 +4,7 @@ import {
   bitbucketRefMatchRegex,
   gitTagsRefMatchRegex,
   githubRefMatchRegex,
+  hostnameMatchRegex,
 } from './modules';
 
 describe('modules/manager/terraform/extractors/others/modules', () => {
@@ -17,13 +18,13 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
   describe('githubRefMatchRegex', () => {
     it('should split project and tag from source', () => {
       const groups = githubRefMatchRegex.exec(
-        'github.com/hashicorp/example?ref=v1.0.0'
+        'github.com/hashicorp/example?ref=v1.0.0',
       )?.groups;
       const depth = githubRefMatchRegex.exec(
-        'github.com/hashicorp/example?depth=1&ref=v1.0.0'
+        'github.com/hashicorp/example?depth=1&ref=v1.0.0',
       )?.groups;
       const depth2 = githubRefMatchRegex.exec(
-        'github.com/hashicorp/example?ref=v1.0.0&depth=1'
+        'github.com/hashicorp/example?ref=v1.0.0&depth=1',
       )?.groups;
       expect(groups).toEqual({
         project: 'hashicorp/example',
@@ -41,7 +42,7 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
 
     it('should parse alpha-numeric characters as well as dots, underscores, and dashes in repo names', () => {
       const groups = githubRefMatchRegex.exec(
-        'github.com/hashicorp/example.repo-123?ref=v1.0.0'
+        'github.com/hashicorp/example.repo-123?ref=v1.0.0',
       )?.groups;
       expect(groups).toEqual({
         project: 'hashicorp/example.repo-123',
@@ -53,22 +54,22 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
   describe('gitTagsRefMatchRegex', () => {
     it('should split project and tag from source', () => {
       const http = gitTagsRefMatchRegex.exec(
-        'http://github.com/hashicorp/example?ref=v1.0.0'
+        'http://github.com/hashicorp/example?ref=v1.0.0',
       )?.groups;
       const https = gitTagsRefMatchRegex.exec(
-        'https://github.com/hashicorp/example?ref=v1.0.0'
+        'https://github.com/hashicorp/example?ref=v1.0.0',
       )?.groups;
       const ssh = gitTagsRefMatchRegex.exec(
-        'ssh://github.com/hashicorp/example?ref=v1.0.0'
+        'ssh://github.com/hashicorp/example?ref=v1.0.0',
       )?.groups;
       const depth = gitTagsRefMatchRegex.exec(
-        'ssh://github.com/hashicorp/example?depth=1&ref=v1.0.0'
+        'ssh://github.com/hashicorp/example?depth=1&ref=v1.0.0',
       )?.groups;
       const depth2 = gitTagsRefMatchRegex.exec(
-        'ssh://github.com/hashicorp/example?ref=v1.0.0&depth=1'
+        'ssh://github.com/hashicorp/example?ref=v1.0.0&depth=1',
       )?.groups;
       const folder = gitTagsRefMatchRegex.exec(
-        'git::ssh://git@git.example.com/modules/foo-module.git//bar?depth=1&ref=v1.0.0'
+        'git::ssh://git@git.example.com/modules/foo-module.git//bar?depth=1&ref=v1.0.0',
       )?.groups;
 
       expect(http).toMatchObject({
@@ -99,17 +100,17 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
 
     it('should parse alpha-numeric characters as well as dots, underscores, and dashes in repo names', () => {
       const http = gitTagsRefMatchRegex.exec(
-        'http://github.com/hashicorp/example.repo-123?ref=v1.0.0'
+        'http://github.com/hashicorp/example.repo-123?ref=v1.0.0',
       )?.groups;
       const https = gitTagsRefMatchRegex.exec(
-        'https://github.com/hashicorp/example.repo-123?ref=v1.0.0'
+        'https://github.com/hashicorp/example.repo-123?ref=v1.0.0',
       )?.groups;
       const ssh = gitTagsRefMatchRegex.exec(
-        'ssh://github.com/hashicorp/example.repo-123?ref=v1.0.0'
+        'ssh://github.com/hashicorp/example.repo-123?ref=v1.0.0',
       )?.groups;
 
       const withoutSshHttpHttps = gitTagsRefMatchRegex.exec(
-        'git@my-gitlab-instance.local:devops/terraform/instance.git?ref=v5.0.0'
+        'git@my-gitlab-instance.local:devops/terraform/instance.git?ref=v5.0.0',
       )?.groups;
 
       expect(http).toMatchObject({
@@ -134,25 +135,28 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
   describe('bitbucketRefMatchRegex', () => {
     it('should split workspace, project and tag from source', () => {
       const ssh = bitbucketRefMatchRegex.exec(
-        'git::ssh://git@bitbucket.org/hashicorp/example.git?ref=v1.0.0'
+        'git::ssh://git@bitbucket.org/hashicorp/example.git?ref=v1.0.0',
       )?.groups;
       const https = bitbucketRefMatchRegex.exec(
-        'git::https://git@bitbucket.org/hashicorp/example.git?ref=v1.0.0'
+        'git::https://git@bitbucket.org/hashicorp/example.git?ref=v1.0.0',
       )?.groups;
       const plain = bitbucketRefMatchRegex.exec(
-        'bitbucket.org/hashicorp/example.git?ref=v1.0.0'
+        'bitbucket.org/hashicorp/example.git?ref=v1.0.0',
       )?.groups;
       const subfolder = bitbucketRefMatchRegex.exec(
-        'bitbucket.org/hashicorp/example.git/terraform?ref=v1.0.0'
+        'bitbucket.org/hashicorp/example.git/terraform?ref=v1.0.0',
       )?.groups;
       const subfolderWithDoubleSlash = bitbucketRefMatchRegex.exec(
-        'bitbucket.org/hashicorp/example.git//terraform?ref=v1.0.0'
+        'bitbucket.org/hashicorp/example.git//terraform?ref=v1.0.0',
+      )?.groups;
+      const subfolderWithGitInName = bitbucketRefMatchRegex.exec(
+        'bitbucket.org/hashicorp/example.git//terraform-git?ref=v1.0.0',
       )?.groups;
       const depth = bitbucketRefMatchRegex.exec(
-        'git::https://git@bitbucket.org/hashicorp/example.git?depth=1&ref=v1.0.0'
+        'git::https://git@bitbucket.org/hashicorp/example.git?depth=1&ref=v1.0.0',
       )?.groups;
       const depth2 = bitbucketRefMatchRegex.exec(
-        'git::https://git@bitbucket.org/hashicorp/example.git?ref=v1.0.0&depth=1'
+        'git::https://git@bitbucket.org/hashicorp/example.git?ref=v1.0.0&depth=1',
       )?.groups;
 
       expect(ssh).toMatchObject({
@@ -180,6 +184,11 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
         project: 'example',
         tag: 'v1.0.0',
       });
+      expect(subfolderWithGitInName).toMatchObject({
+        workspace: 'hashicorp',
+        project: 'example',
+        tag: 'v1.0.0',
+      });
       expect(depth).toMatchObject({
         workspace: 'hashicorp',
         project: 'example',
@@ -194,7 +203,7 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
 
     it('should parse alpha-numeric characters as well as dots, underscores, and dashes in repo names', () => {
       const dots = bitbucketRefMatchRegex.exec(
-        'bitbucket.org/hashicorp/example.repo-123.git?ref=v1.0.0'
+        'bitbucket.org/hashicorp/example.repo-123.git?ref=v1.0.0',
       )?.groups;
 
       expect(dots).toMatchObject({
@@ -208,7 +217,7 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
   describe('azureDevOpsSshRefMatchRegex', () => {
     it('should split organization, project, repository and tag from source url', () => {
       const ssh = azureDevOpsSshRefMatchRegex.exec(
-        'git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository?ref=1.0.0'
+        'git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository?ref=1.0.0',
       )?.groups;
 
       expect(ssh).toEqual({
@@ -223,7 +232,7 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
 
     it('should split organization, project, repository and tag from source url with git prefix', () => {
       const sshGit = azureDevOpsSshRefMatchRegex.exec(
-        'git::git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository?ref=1.0.0'
+        'git::git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository?ref=1.0.0',
       )?.groups;
 
       expect(sshGit).toEqual({
@@ -238,7 +247,7 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
 
     it('should split organization, project, repository and tag from source url with subfolder', () => {
       const subfolder = azureDevOpsSshRefMatchRegex.exec(
-        'git::git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository//some-module/path?ref=1.0.0'
+        'git::git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository//some-module/path?ref=1.0.0',
       )?.groups;
 
       expect(subfolder).toEqual({
@@ -253,10 +262,10 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
 
     it('should split organization, project, repository and tag from source url with depth argument', () => {
       const depth = azureDevOpsSshRefMatchRegex.exec(
-        'git::git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository//some-module/path?depth=1&ref=1.0.0'
+        'git::git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository//some-module/path?depth=1&ref=1.0.0',
       )?.groups;
       const depth2 = azureDevOpsSshRefMatchRegex.exec(
-        'git::git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository//some-module/path?ref=1.0.0&depth=1'
+        'git::git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository//some-module/path?ref=1.0.0&depth=1',
       )?.groups;
 
       expect(depth).toEqual({
@@ -279,7 +288,7 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
 
     it('should parse alpha-numeric characters as well as dots, underscores, and dashes in repo names', () => {
       const dots = azureDevOpsSshRefMatchRegex.exec(
-        'git::git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository//some-module/path?ref=v1.0.0'
+        'git::git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository//some-module/path?ref=v1.0.0',
       )?.groups;
 
       expect(dots).toEqual({
@@ -289,6 +298,24 @@ describe('modules/manager/terraform/extractors/others/modules', () => {
         repository: 'MyRepository',
         tag: 'v1.0.0',
         url: 'git@ssh.dev.azure.com:v3/MyOrg/MyProject/MyRepository',
+      });
+    });
+  });
+
+  describe('hostnameMatchRegex', () => {
+    it('should extact hostname from source url', () => {
+      const host1 = hostnameMatchRegex.exec(
+        'git-lab.git-server.com/my/terraform/module',
+      )?.groups;
+      const host2 = hostnameMatchRegex.exec(
+        'example.com/my/terraform/module',
+      )?.groups;
+
+      expect(host1).toEqual({
+        hostname: 'git-lab.git-server.com',
+      });
+      expect(host2).toEqual({
+        hostname: 'example.com',
       });
     });
   });

@@ -1,13 +1,5 @@
-FROM ghcr.io/containerbase/node:18.17.1
+FROM ghcr.io/containerbase/devcontainer:13.7.15
 
-USER root
-
-RUN install-apt make g++
-
-# renovate: datasource=github-releases packageName=containerbase/python-prebuild
-RUN install-tool python 3.11.5
-
+# https://github.com/pnpm/pnpm/issues/8971
 # renovate: datasource=npm
-RUN install-tool corepack 0.20.0
-
-USER ubuntu
+RUN install-tool pnpm 10.3.0

@@ -27,11 +27,12 @@ export class JavaVersionDatasource extends Datasource {
 
   private async getPageReleases(
     url: string,
-    page: number
+    page: number,
   ): Promise<Release[] | null> {
     const pgUrl = `${url}&page=${page}`;
     try {
-      const pgRes = await this.http.getJson<AdoptiumJavaResponse>(pgUrl);
+      const pgRes =
+        await this.http.getJsonUnchecked<AdoptiumJavaResponse>(pgUrl);
       return (
         pgRes?.body?.versions?.map(({ semver }) => ({
           version: semver,
@@ -64,7 +65,7 @@ export class JavaVersionDatasource extends Datasource {
     const imageType = getImageType(packageName);
     logger.trace(
       { registryUrl, packageName, imageType },
-      'fetching java release'
+      'fetching java release',
     );
     // TODO: types (#22198)
     const url = `${registryUrl!}v3/info/release_versions?page_size=${pageSize}&image_type=${imageType}&project=jdk&release_type=ga&sort_method=DATE&sort_order=DESC`;

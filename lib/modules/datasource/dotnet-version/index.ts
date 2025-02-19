@@ -23,6 +23,13 @@ export class DotnetVersionDatasource extends Datasource {
     'https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json',
   ];
 
+  override releaseTimestampSupport = true;
+  override releaseTimestampNote =
+    'The release timestamp is determined from the `release-date` field in the results.';
+  override readonly sourceUrlSupport = 'package';
+  override readonly sourceUrlNote =
+    'We use the URL https://github.com/dotnet/sdk for the `dotnet-sdk` package and, the https://github.com/dotnet/runtime URL for the `dotnet-runtime` package.';
+
   @cache({
     namespace: `datasource-${DotnetVersionDatasource.id}`,
     key: ({ packageName }: GetReleasesConfig) => packageName,
@@ -39,13 +46,13 @@ export class DotnetVersionDatasource extends Datasource {
       const registryUrl = this.defaultRegistryUrls[0];
       const { body: urls } = await this.http.getJson(
         registryUrl,
-        ReleasesIndex
+        ReleasesIndex,
       );
 
       const channelReleases = await p.map(
         urls,
         (url) => this.getChannelReleases(url, packageName),
-        { concurrency: 1, stopOnError: true }
+        { concurrency: 1, stopOnError: true },
       );
       const releases = channelReleases.flat();
 
@@ -68,7 +75,7 @@ export class DotnetVersionDatasource extends Datasource {
   })
   async getChannelReleases(
     releaseUrl: string,
-    packageName: string
+    packageName: string,
   ): Promise<Release[]> {
     const schema =
       packageName === 'dotnet-sdk' ? DotnetSdkReleases : DotnetRuntimeReleases;

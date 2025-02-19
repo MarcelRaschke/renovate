@@ -1,8 +1,9 @@
-import {
+import type { WebApiTeam } from 'azure-devops-node-api/interfaces/CoreInterfaces.js';
+import type {
   GitCommit,
-  GitPullRequestMergeStrategy,
   GitRef,
 } from 'azure-devops-node-api/interfaces/GitInterfaces.js';
+import { GitPullRequestMergeStrategy } from 'azure-devops-node-api/interfaces/GitInterfaces.js';
 import { logger } from '../../../logger';
 import { streamToString } from '../../../util/streams';
 import { getNewBranchName } from '../util';
@@ -17,14 +18,14 @@ const mergePolicyGuid = 'fa4e907d-c16b-4a4c-9dfa-4916e5d171ab'; // Magic GUID fo
 
 export async function getRefs(
   repoId: string,
-  branchName?: string
+  branchName?: string,
 ): Promise<GitRef[]> {
   logger.debug(`getRefs(${repoId}, ${branchName!})`);
   const azureApiGit = await azureApi.gitApi();
   const refs = await azureApiGit.getRefs(
     repoId,
     undefined,
-    getBranchNameWithoutRefsPrefix(branchName)
+    getBranchNameWithoutRefsPrefix(branchName),
   );
   return refs;
 }
@@ -37,7 +38,7 @@ export interface AzureBranchObj {
 export async function getAzureBranchObj(
   repoId: string,
   branchName: string,
-  from?: string
+  from?: string,
 ): Promise<AzureBranchObj> {
   const fromBranchName = getNewBranchName(from);
   const refs = await getRefs(repoId, fromBranchName);
@@ -60,7 +61,7 @@ export async function getAzureBranchObj(
 export async function getFile(
   repoId: string,
   filePath: string,
-  branchName: string
+  branchName: string,
 ): Promise<string | null> {
   logger.trace(`getFile(filePath=${filePath}, branchName=${branchName})`);
   const azureApiGit = await azureApi.gitApi();
@@ -77,7 +78,7 @@ export async function getFile(
       versionType: 0, // branch
       versionOptions: 0,
       version: getBranchNameWithoutRefsheadsPrefix(branchName),
-    }
+    },
   );
 
   if (item?.readable) {
@@ -86,15 +87,15 @@ export async function getFile(
       const result = WrappedExceptionSchema.safeParse(fileContent);
       if (result.success) {
         if (result.data.typeKey === 'GitItemNotFoundException') {
-          logger.warn(`Unable to find file ${filePath}`);
+          logger.warn({ filePath }, 'Unable to find file');
           return null;
         }
         if (result.data.typeKey === 'GitUnresolvableToCommitException') {
-          logger.warn(`Unable to find branch ${branchName}`);
+          logger.warn({ branchName }, 'Unable to find branch');
           return null;
         }
       }
-    } catch (error) {
+    } catch {
       // it 's not a JSON, so I send the content directly with the line under
     }
 
@@ -105,7 +106,7 @@ export async function getFile(
 
 export async function getCommitDetails(
   commit: string,
-  repoId: string
+  repoId: string,
 ): Promise<GitCommit> {
   logger.debug(`getCommitDetails(${commit}, ${repoId})`);
   const azureApiGit = await azureApi.gitApi();
@@ -117,8 +118,11 @@ export async function getMergeMethod(
   repoId: string,
   project: string,
   branchRef?: string | null,
-  defaultBranch?: string
+  defaultBranch?: string,
 ): Promise<GitPullRequestMergeStrategy> {
+  logger.debug(
+    `getMergeMethod(branchRef=${branchRef}, defaultBranch=${defaultBranch})`,
+  );
   type Scope = {
     repositoryId: string;
     refName?: string;
@@ -132,7 +136,7 @@ export async function getMergeMethod(
     ) {
       return true;
     }
-    if (scope.repositoryId !== repoId) {
+    if (scope.repositoryId !== repoId && scope.repositoryId !== null) {
       return false;
     }
     if (!branchRef) {
@@ -152,13 +156,13 @@ export async function getMergeMethod(
     .filter((p) => p.settings.scope.some(isRelevantScope))
     .map((p) => p.settings)[0];
 
-  logger.trace(
+  logger.debug(
     // TODO: types (#22198)
-    `getMergeMethod(${repoId}, ${project}, ${branchRef!}) determining mergeMethod from matched policy:\n${JSON.stringify(
+    `getMergeMethod(branchRef=${branchRef!}) determining mergeMethod from matched policy:\n${JSON.stringify(
       policyConfigurations,
       null,
-      4
-    )}`
+      4,
+    )}`,
   );
 
   try {
@@ -168,10 +172,29 @@ export async function getMergeMethod(
         (p) =>
           GitPullRequestMergeStrategy[
             p.slice(5) as never
-          ] as never as GitPullRequestMergeStrategy
+          ] as never as GitPullRequestMergeStrategy,
       )
       .find((p) => p)!;
-  } catch (err) {
+  } catch {
     return GitPullRequestMergeStrategy.NoFastForward;
   }
+}
+
+export async function getAllProjectTeams(
+  projectId: string,
+): Promise<WebApiTeam[]> {
+  const allTeams: WebApiTeam[] = [];
+  const azureApiCore = await azureApi.coreApi();
+  const top = 100;
+  let skip = 0;
+  let length = 0;
+
+  do {
+    const teams = await azureApiCore.getTeams(projectId, undefined, top, skip);
+    length = teams.length;
+    allTeams.push(...teams);
+    skip += top;
+  } while (top <= length);
+
+  return allTeams;
 }

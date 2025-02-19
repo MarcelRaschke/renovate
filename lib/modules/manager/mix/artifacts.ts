@@ -16,7 +16,7 @@ import type { UpdateArtifact, UpdateArtifactsResult } from '../types';
 
 const hexRepoUrl = 'https://hex.pm/';
 const hexRepoOrgUrlRegex = regEx(
-  `^https://hex\\.pm/api/repos/(?<organization>[a-z0-9_]+)/$`
+  `^https://hex\\.pm/api/repos/(?<organization>[a-z0-9_]+)/$`,
 );
 
 export async function updateArtifacts({
@@ -59,7 +59,7 @@ export async function updateArtifacts({
     .getAll()
     .filter(
       (hostRule) =>
-        !!hostRule.matchHost && hexRepoOrgUrlRegex.test(hostRule.matchHost)
+        !!hostRule.matchHost && hexRepoOrgUrlRegex.test(hostRule.matchHost),
     );
 
   for (const { matchHost } of hexHostRulesWithMatchHost) {
@@ -99,6 +99,7 @@ export async function updateArtifacts({
   const execOptions: ExecOptions = {
     cwdFile: packageFileName,
     docker: {},
+    userConfiguredEnv: config.env,
     toolConstraints: [
       {
         toolName: 'erlang',
@@ -131,7 +132,7 @@ export async function updateArtifacts({
 
     logger.debug(
       { err, message: err.message, command },
-      'Failed to update Mix lock file'
+      'Failed to update Mix lock file',
     );
 
     return [

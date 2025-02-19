@@ -7,21 +7,21 @@ import type { RollbackConfig } from './types';
 export function getRollbackUpdate(
   config: RollbackConfig,
   versions: Release[],
-  version: VersioningApi
+  versioningApi: VersioningApi,
 ): LookupUpdate | null {
   const { packageFile, versioning, depName, currentValue } = config;
   // istanbul ignore if
-  if (!('isLessThanRange' in version)) {
+  if (!('isLessThanRange' in versioningApi)) {
     logger.debug(
       { versioning },
-      'Current versioning does not support isLessThanRange()'
+      'Current versioning does not support isLessThanRange()',
     );
     return null;
   }
   const lessThanVersions = versions.filter((v) => {
     try {
-      return version.isLessThanRange!(v.version, currentValue!);
-    } catch (err) /* istanbul ignore next */ {
+      return versioningApi.isLessThanRange!(v.version, currentValue!);
+    } catch /* istanbul ignore next */ {
       return false;
     }
   });
@@ -29,24 +29,26 @@ export function getRollbackUpdate(
   if (!lessThanVersions.length) {
     logger.debug(
       { packageFile, depName, currentValue },
-      'Missing version has nothing to roll back to'
+      'Missing version has nothing to roll back to',
     );
     return null;
   }
   logger.debug(
     { packageFile, depName, currentValue },
-    `Current version not found - rolling back`
+    `Current version not found - rolling back`,
   );
   logger.debug(
     { dependency: depName, versions },
-    'Versions found before rolling back'
+    'Versions found before rolling back',
   );
 
-  lessThanVersions.sort((a, b) => version.sortVersions(a.version, b.version));
+  lessThanVersions.sort((a, b) =>
+    versioningApi.sortVersions(a.version, b.version),
+  );
   let newRelease;
-  if (currentValue && version.isStable(currentValue)) {
+  if (currentValue && versioningApi.isStable(currentValue)) {
     newRelease = lessThanVersions
-      .filter((v) => version.isStable(v.version))
+      .filter((v) => versioningApi.isStable(v.version))
       .pop();
   }
   let newVersion = newRelease?.version;
@@ -62,7 +64,7 @@ export function getRollbackUpdate(
     logger.debug('No newVersion to roll back to');
     return null;
   }
-  const newValue = version.getNewValue({
+  const newValue = versioningApi.getNewValue({
     // TODO #22198
     currentValue: currentValue!,
     rangeStrategy: 'replace',
@@ -71,7 +73,7 @@ export function getRollbackUpdate(
   return {
     bucket: 'rollback',
     // TODO #22198
-    newMajor: version.getMajor(newVersion)!,
+    newMajor: versioningApi.getMajor(newVersion)!,
     newValue: newValue!,
     newVersion,
     registryUrl,

@@ -1,18 +1,23 @@
 import is from '@sindresorhus/is';
 import type { PackageRule, PackageRuleInputConfig } from '../../config/types';
+import { anyMatchRegexOrGlobList } from '../string-match';
 import { Matcher } from './base';
 
 export class UpdateTypesMatcher extends Matcher {
   override matches(
     { updateType, isBump }: PackageRuleInputConfig,
-    { matchUpdateTypes }: PackageRule
+    { matchUpdateTypes }: PackageRule,
   ): boolean | null {
     if (is.undefined(matchUpdateTypes)) {
       return null;
     }
-    return (
-      (is.truthy(updateType) && matchUpdateTypes.includes(updateType)) ||
-      (is.truthy(isBump) && matchUpdateTypes.includes('bump'))
-    );
+    if (!updateType) {
+      return false;
+    }
+    const toMatch = [updateType];
+    if (isBump) {
+      toMatch.push('bump');
+    }
+    return anyMatchRegexOrGlobList(toMatch, matchUpdateTypes);
   }
 }

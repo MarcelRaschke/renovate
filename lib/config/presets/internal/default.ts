@@ -3,7 +3,7 @@ import type { Preset } from '../types';
 /* eslint sort-keys: ["error", "asc", {caseSensitive: false, natural: true}] */
 export const presets: Record<string, Preset> = {
   approveMajorUpdates: {
-    description: 'Require dependency dashboard approval for `major` updates.',
+    description: 'Require Dependency Dashboard approval for `major` updates.',
     packageRules: [
       {
         dependencyDashboardApproval: true,
@@ -96,7 +96,7 @@ export const presets: Record<string, Preset> = {
     packageRules: [
       {
         automerge: true,
-        matchCurrentVersion: '>= 1.0.0',
+        matchCurrentVersion: '!/^0/',
         matchUpdateTypes: ['minor', 'patch'],
       },
     ],
@@ -115,7 +115,7 @@ export const presets: Record<string, Preset> = {
     packageRules: [
       {
         automerge: true,
-        matchPackagePrefixes: ['@types/'],
+        matchPackageNames: ['@types/**'],
       },
     ],
   },
@@ -123,6 +123,10 @@ export const presets: Record<string, Preset> = {
     description:
       'Do not separate `patch` and `minor` upgrades into separate PRs for the same dependency.',
     separateMinorPatch: false,
+  },
+  configMigration: {
+    configMigration: true,
+    description: 'Enable Renovate configuration migration PRs when needed.',
   },
   dependencyDashboard: {
     dependencyDashboard: true,
@@ -137,11 +141,11 @@ export const presets: Record<string, Preset> = {
     description: 'Disable Renovate Dependency Dashboard creation.',
   },
   disableDevDependencies: {
-    description: 'Do not renovate `devDependencies` versions/ranges.',
+    description: 'Do not update development dependencies.',
     packageRules: [
       {
         enabled: false,
-        matchDepTypes: ['devDependencies'],
+        matchDepTypes: ['devDependencies', 'dev-dependencies', 'dev'],
       },
     ],
   },
@@ -180,7 +184,7 @@ export const presets: Record<string, Preset> = {
     },
   },
   disablePeerDependencies: {
-    description: 'Do not renovate `peerDependencies` versions/ranges.',
+    description: 'Do not update `peerDependencies` versions/ranges.',
     packageRules: [
       {
         enabled: false,
@@ -293,7 +297,7 @@ export const presets: Record<string, Preset> = {
   },
   ignoreModulesAndTests: {
     description:
-      'Ignore `node_modules`, `bower_components`, `vendor` and various test/tests directories.',
+      'Ignore `node_modules`, `bower_components`, `vendor` and various test/tests (except for nuget) directories.',
     ignorePaths: [
       '**/node_modules/**',
       '**/bower_components/**',
@@ -304,6 +308,15 @@ export const presets: Record<string, Preset> = {
       '**/tests/**',
       '**/__fixtures__/**',
     ],
+    nuget: {
+      ignorePaths: [
+        '**/node_modules/**',
+        '**/bower_components/**',
+        '**/vendor/**',
+        '**/examples/**',
+        '**/__fixtures__/**',
+      ],
+    },
   },
   ignoreUnstable: {
     description:
@@ -361,21 +374,9 @@ export const presets: Record<string, Preset> = {
       enabled: true,
     },
   },
-  onlyNpm: {
-    description: 'Renovate only npm dependencies.',
-    'docker-compose': {
-      enabled: false,
-    },
-    dockerfile: {
-      enabled: false,
-    },
-    meteor: {
-      enabled: false,
-    },
-  },
   pathSemanticCommitType: {
     description:
-      'Use semanticCommitType `{{arg0}}` for all package files matching path `{{arg1}}`.',
+      'Use semanticCommitType `{{arg1}}` for all package files matching path `{{arg0}}`.',
     packageRules: [
       {
         matchFileNames: ['{{arg0}}'],
@@ -387,7 +388,7 @@ export const presets: Record<string, Preset> = {
     description: 'Pin all dependency versions except `peerDependencies`.',
     packageRules: [
       {
-        matchPackagePatterns: ['*'],
+        matchPackageNames: ['*'],
         rangeStrategy: 'pin',
       },
       {
@@ -407,10 +408,10 @@ export const presets: Record<string, Preset> = {
     ],
   },
   pinDevDependencies: {
-    description: 'Pin dependency versions for `devDependencies`.',
+    description: 'Pin dependency versions for development dependencies.',
     packageRules: [
       {
-        matchDepTypes: ['devDependencies'],
+        matchDepTypes: ['devDependencies', 'dev-dependencies', 'dev'],
         rangeStrategy: 'pin',
       },
     ],
@@ -421,14 +422,14 @@ export const presets: Record<string, Preset> = {
   },
   pinOnlyDevDependencies: {
     description:
-      'Pin dependency versions for `devDependencies` and retain SemVer ranges for others.',
+      'Pin dependency versions for development dependencies and retain SemVer ranges for others.',
     packageRules: [
       {
-        matchPackagePatterns: ['*'],
+        matchPackageNames: ['*'],
         rangeStrategy: 'replace',
       },
       {
-        matchDepTypes: ['devDependencies'],
+        matchDepTypes: ['devDependencies', 'dev-dependencies', 'dev'],
         rangeStrategy: 'pin',
       },
       {
@@ -463,7 +464,7 @@ export const presets: Record<string, Preset> = {
   preserveSemverRanges: {
     description:
       'Preserve (but continue to upgrade) any existing SemVer ranges.',
-    packageRules: [{ matchPackagePatterns: ['*'], rangeStrategy: 'replace' }],
+    packageRules: [{ matchPackageNames: ['*'], rangeStrategy: 'replace' }],
   },
   prHourlyLimit1: {
     description: 'Rate limit PR creation to a maximum of one per hour.',
@@ -497,7 +498,7 @@ export const presets: Record<string, Preset> = {
   },
   renovatePrefix: {
     branchPrefix: 'renovate/',
-    description: 'Prefix `renovate/` to all branch names.',
+    description: 'Add the `renovate/` prefix to all branch names.',
   },
   respectLatest: {
     description: 'Upgrade versions up to the "latest" tag in the npm registry.',
@@ -554,7 +555,7 @@ export const presets: Record<string, Preset> = {
       'Use semantic commit type `fix` for dependencies and `chore` for all others if semantic commits are in use.',
     packageRules: [
       {
-        matchPackagePatterns: ['*'],
+        matchPackageNames: ['*'],
         semanticCommitType: 'chore',
       },
       {
@@ -573,6 +574,19 @@ export const presets: Record<string, Preset> = {
         ],
         semanticCommitType: 'fix',
       },
+      {
+        matchDepTypes: [
+          'project.dependencies',
+          'project.optional-dependencies',
+        ],
+        matchManagers: ['pep621'],
+        semanticCommitType: 'fix',
+      },
+      {
+        matchDepTypes: ['dependencies', 'extras'],
+        matchManagers: ['poetry'],
+        semanticCommitType: 'fix',
+      },
     ],
   },
   separateMajorReleases: {
@@ -585,6 +599,11 @@ export const presets: Record<string, Preset> = {
       'Separate each `major` version of dependencies into individual branches/PRs.',
     separateMajorMinor: true,
     separateMultipleMajor: true,
+  },
+  separateMultipleMinorReleases: {
+    description:
+      'Separate each `minor` version of dependencies into individual branches/PRs.',
+    separateMultipleMinor: true,
   },
   separatePatchReleases: {
     description:

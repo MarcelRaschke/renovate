@@ -1,7 +1,9 @@
 import { setTimeout } from 'timers/promises';
 import fs from 'fs-extra';
-import _simpleGit, { SimpleGit } from 'simple-git';
-import { DirectoryResult, dir } from 'tmp-promise';
+import type { SimpleGit } from 'simple-git';
+import _simpleGit from 'simple-git';
+import type { DirectoryResult } from 'tmp-promise';
+import { dir } from 'tmp-promise';
 import { dirname, join } from 'upath';
 import { getPkgReleases } from '..';
 import { Fixtures } from '../../../../test/fixtures';
@@ -36,7 +38,7 @@ function setupGitMocks(delayMs?: number): { mockClone: jest.Mock<any, any> } {
         const path = `${clonePath}/my/pk/mypkg`;
         fs.mkdirSync(dirname(path), { recursive: true });
         fs.writeFileSync(path, Fixtures.get('mypkg'), { encoding: 'utf8' });
-      }
+      },
     );
 
   simpleGit.mockReturnValue({
@@ -51,7 +53,7 @@ function setupErrorGitMock(): { mockClone: jest.Mock<any, any> } {
     .fn()
     .mockName('clone')
     .mockImplementation((_registryUrl: string, _clonePath: string, _opts) =>
-      Promise.reject(new Error('mocked error'))
+      Promise.reject(new Error('mocked error')),
     );
 
   simpleGit.mockReturnValue({
@@ -128,7 +130,7 @@ describe('modules/datasource/crate/index', () => {
           datasource,
           packageName: 'non_existent_crate',
           registryUrls: [],
-        })
+        }),
       ).toBeNull();
     });
 
@@ -138,7 +140,7 @@ describe('modules/datasource/crate/index', () => {
           datasource,
           packageName: 'non_existent_crate',
           registryUrls: ['3'],
-        })
+        }),
       ).toBeNull();
     });
 
@@ -150,7 +152,7 @@ describe('modules/datasource/crate/index', () => {
           datasource,
           packageName: 'non_existent_crate',
           registryUrls: ['https://crates.io'],
-        })
+        }),
       ).toBeNull();
     });
 
@@ -165,7 +167,7 @@ describe('modules/datasource/crate/index', () => {
           datasource,
           packageName: 'non_existent_crate',
           registryUrls: ['https://crates.io'],
-        })
+        }),
       ).toBeNull();
     });
 
@@ -177,7 +179,7 @@ describe('modules/datasource/crate/index', () => {
           datasource,
           packageName: 'non_existent_crate',
           registryUrls: ['https://crates.io'],
-        })
+        }),
       ).toBeNull();
     });
 
@@ -188,7 +190,7 @@ describe('modules/datasource/crate/index', () => {
           datasource,
           packageName: 'some_crate',
           registryUrls: ['https://crates.io'],
-        })
+        }),
       ).toBeNull();
     });
 
@@ -199,7 +201,7 @@ describe('modules/datasource/crate/index', () => {
           datasource,
           packageName: 'some_crate',
           registryUrls: ['https://crates.io'],
-        })
+        }),
       ).rejects.toThrow(EXTERNAL_HOST_ERROR);
     });
 
@@ -210,7 +212,7 @@ describe('modules/datasource/crate/index', () => {
           datasource,
           packageName: 'some_crate',
           registryUrls: ['https://crates.io'],
-        })
+        }),
       ).toBeNull();
     });
 
@@ -383,8 +385,50 @@ describe('modules/datasource/crate/index', () => {
       };
       const crateDatasource = new CrateDatasource();
       await expect(
-        crateDatasource.fetchCrateRecordsPayload(info, 'benedict')
+        crateDatasource.fetchCrateRecordsPayload(info, 'benedict'),
       ).toReject();
+    });
+  });
+
+  describe('postprocessRelease', () => {
+    const datasource = new CrateDatasource();
+
+    it('no-op for registries other than crates.io', async () => {
+      const releaseOrig = { version: '4.5.17' };
+
+      const res = await datasource.postprocessRelease(
+        {
+          packageName: 'clap',
+          registryUrl: 'https://example.com',
+        },
+        releaseOrig,
+      );
+
+      expect(res).toBe(releaseOrig);
+    });
+
+    it('fetches releaseTimestamp', async () => {
+      httpMock
+        .scope(API_BASE_URL)
+        .get('/crates/clap/4.5.17')
+        .reply(200, {
+          version: {
+            created_at: '2024-09-04T19:16:41.355243+00:00',
+          },
+        });
+
+      const res = await datasource.postprocessRelease(
+        {
+          packageName: 'clap',
+          registryUrl: 'https://crates.io',
+        },
+        { version: '4.5.17' },
+      );
+
+      expect(res).toEqual({
+        version: '4.5.17',
+        releaseTimestamp: '2024-09-04T19:16:41.355Z',
+      });
     });
   });
 });

@@ -1,11 +1,12 @@
 import is from '@sindresorhus/is';
 import type { PackageRule, PackageRuleInputConfig } from '../../config/types';
+import { anyMatchRegexOrGlobList } from '../string-match';
 import { Matcher } from './base';
 
 export class CategoriesMatcher extends Matcher {
   override matches(
     { categories }: PackageRuleInputConfig,
-    { matchCategories }: PackageRule
+    { matchCategories }: PackageRule,
   ): boolean | null {
     if (is.nullOrUndefined(matchCategories)) {
       return null;
@@ -15,6 +16,6 @@ export class CategoriesMatcher extends Matcher {
       return false;
     }
 
-    return matchCategories.some((value) => categories.includes(value));
+    return anyMatchRegexOrGlobList(categories, matchCategories);
   }
 }

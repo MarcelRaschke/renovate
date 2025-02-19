@@ -10,10 +10,9 @@ import platforms from './api';
 import { setPlatformScmApi } from './scm';
 import type { Platform } from './types';
 
-export * from './types';
+export type * from './types';
 
 export const getPlatformList = (): string[] => Array.from(platforms.keys());
-export const getPlatforms = (): Map<string, Platform> => platforms;
 
 let _platform: Platform | undefined;
 
@@ -32,8 +31,8 @@ export function setPlatformApi(name: PlatformId): void {
   if (!platforms.has(name)) {
     throw new Error(
       `Init: Platform "${name}" not found. Must be one of: ${getPlatformList().join(
-        ', '
-      )}`
+        ', ',
+      )}`,
     );
   }
   _platform = platforms.get(name);
@@ -47,7 +46,14 @@ export async function initPlatform(config: AllConfig): Promise<AllConfig> {
   setPlatformApi(config.platform!);
   // TODO: types
   const platformInfo = await platform.initPlatform(config);
-  const returnConfig: any = { ...config, ...platformInfo };
+  const returnConfig: any = {
+    ...config,
+    ...platformInfo,
+    hostRules: [
+      ...(platformInfo?.hostRules ?? []),
+      ...(config.hostRules ?? []),
+    ],
+  };
   // istanbul ignore else
   if (config?.gitAuthor) {
     logger.debug(`Using configured gitAuthor (${config.gitAuthor})`);
@@ -75,7 +81,6 @@ export async function initPlatform(config: AllConfig): Promise<AllConfig> {
       delete returnConfig[field];
     }
   });
-  returnConfig.hostRules = returnConfig.hostRules || [];
   const typedPlatformRule = {
     ...platformRule,
     hostType: returnConfig.platform,

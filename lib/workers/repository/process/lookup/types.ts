@@ -41,6 +41,7 @@ export interface LookupUpdateConfig
   isVulnerabilityAlert?: boolean;
   separateMajorMinor?: boolean;
   separateMultipleMajor?: boolean;
+  separateMultipleMinor?: boolean;
   datasource: string;
   packageName: string;
   minimumConfidence?: MergeConfidence | undefined;
@@ -48,6 +49,8 @@ export interface LookupUpdateConfig
   replacementNameTemplate?: string;
   replacementVersion?: string;
   extractVersion?: string;
+  vulnerabilityFixVersion?: string;
+  vulnerabilityFixStrategy?: string;
 }
 
 export interface UpdateResult {
@@ -59,10 +62,15 @@ export interface UpdateResult {
   sourceUrl?: string | null;
   currentVersion?: string;
   isSingleVersion?: boolean;
+  lookupName?: string;
   skipReason?: SkipReason;
   registryUrl?: string;
   fixedVersion?: string;
   updates: LookupUpdate[];
   warnings: ValidationMessage[];
   versioning?: string;
+  currentVersionAgeInDays?: number;
+  currentVersionTimestamp?: string;
+  vulnerabilityFixVersion?: string;
+  vulnerabilityFixStrategy?: string;
 }

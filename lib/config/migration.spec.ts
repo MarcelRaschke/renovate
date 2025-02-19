@@ -254,14 +254,14 @@ describe('config/migration', () => {
             groupName: ['angular packages'],
           },
         ],
-      };
+      } as unknown as RenovateConfig;
       const { isMigrated, migratedConfig } =
         configMigration.migrateConfig(config);
       expect(isMigrated).toBeTrue();
       expect(migratedConfig).toEqual({
         packageRules: [
           {
-            matchPackagePatterns: '^(@angular|typescript)',
+            matchPackageNames: ['/^(@angular|typescript)/'],
             groupName: 'angular packages',
           },
         ],
@@ -316,7 +316,7 @@ describe('config/migration', () => {
       // TODO: fix types #22198
       expect(
         (migratedConfig.lockFileMaintenance as RenovateConfig)
-          ?.packageRules?.[0].respectLatest
+          ?.packageRules?.[0].respectLatest,
       ).toBeFalse();
     });
 
@@ -505,27 +505,6 @@ describe('config/migration', () => {
       });
     });
 
-    it('migrates combinations of packageRules', () => {
-      let config: TestRenovateConfig;
-      let res: MigratedConfig;
-
-      config = {
-        packages: [{ matchPackagePatterns: ['*'] }],
-        packageRules: [{ matchPackageNames: [] }],
-      } as never;
-      res = configMigration.migrateConfig(config);
-      expect(res.isMigrated).toBeTrue();
-      expect(res.migratedConfig.packageRules).toHaveLength(2);
-
-      config = {
-        packageRules: [{ matchPpackageNames: [] }],
-        packages: [{ matchPackagePatterns: ['*'] }],
-      } as never;
-      res = configMigration.migrateConfig(config);
-      expect(res.isMigrated).toBeTrue();
-      expect(res.migratedConfig.packageRules).toHaveLength(2);
-    });
-
     it('it migrates packageRules', () => {
       const config: TestRenovateConfig = {
         packageRules: [
@@ -540,6 +519,7 @@ describe('config/migration', () => {
             packagePatterns: ['^bar'],
             excludePackageNames: ['baz'],
             excludePackagePatterns: ['^baz'],
+            excludeRepositories: ['abc/def'],
             sourceUrlPrefixes: ['https://github.com/lodash'],
             updateTypes: ['major'],
           },
@@ -551,17 +531,15 @@ describe('config/migration', () => {
       expect(migratedConfig).toEqual({
         packageRules: [
           {
-            excludePackageNames: ['baz'],
-            excludePackagePatterns: ['^baz'],
             matchBaseBranches: ['master'],
             matchDatasources: ['orb'],
             matchDepTypes: ['peerDependencies'],
             matchCategories: ['python'],
             matchManagers: ['dockerfile'],
-            matchPackageNames: ['foo'],
-            matchPackagePatterns: ['^bar'],
+            matchPackageNames: ['foo', '/^bar/', '!baz', '!/^baz/'],
+            matchRepositories: ['!abc/def'],
             matchFileNames: ['package.json'],
-            matchSourceUrlPrefixes: ['https://github.com/lodash'],
+            matchSourceUrls: ['https://github.com/lodash{/,}**'],
             matchUpdateTypes: ['major'],
           },
         ],
@@ -610,7 +588,7 @@ describe('config/migration', () => {
           packageRules: [
             {
               groupName: 'definitelyTyped',
-              matchPackagePrefixes: ['@types/'],
+              matchPackageNames: ['@types/**'],
             },
             {
               matchDepTypes: ['dependencies'],
@@ -643,10 +621,11 @@ describe('config/migration', () => {
     expect(migratedConfig).toEqual({ extends: ['local>org/renovate-config'] });
   });
 
-  it('it migrates regexManagers', () => {
+  it('it migrates customManagers', () => {
     const config: RenovateConfig = {
-      regexManagers: [
+      customManagers: [
         {
+          customType: 'regex',
           fileMatch: ['(^|/|\\.)Dockerfile$', '(^|/)Dockerfile[^/]*$'],
           matchStrings: [
             '# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>[^\\s]+?)(?: lookupName=(?<lookupName>[^\\s]+?))?(?: versioning=(?<versioning>[a-z-0-9]+?))?\\s(?:ENV|ARG) .+?_VERSION="?(?<currentValue>.+?)"?\\s',
@@ -667,11 +646,40 @@ describe('config/migration', () => {
     expect(migratedConfig).toMatchSnapshot();
   });
 
+  it('it migrates pip-compile', () => {
+    const config: RenovateConfig = {
+      'pip-compile': {
+        enabled: true,
+        fileMatch: [
+          '(^|/)requirements\\.in$',
+          '(^|/)requirements-fmt\\.in$',
+          '(^|/)requirements-lint\\.in$',
+          '.github/workflows/requirements.in',
+          '(^|/)debian_packages/private/third_party/requirements\\.in$',
+          '(^|/).*?requirements.*?\\.in$',
+        ],
+      },
+    };
+    const { isMigrated, migratedConfig } =
+      configMigration.migrateConfig(config);
+    expect(isMigrated).toBeTrue();
+    expect(migratedConfig).toEqual({
+      'pip-compile': {
+        enabled: true,
+        fileMatch: [
+          '(^|/)requirements\\.txt$',
+          '(^|/)requirements-fmt\\.txt$',
+          '(^|/)requirements-lint\\.txt$',
+          '.github/workflows/requirements.txt',
+          '(^|/)debian_packages/private/third_party/requirements\\.txt$',
+          '(^|/).*?requirements.*?\\.txt$',
+        ],
+      },
+    });
+  });
+
   it('it migrates gradle-lite', () => {
     const config: RenovateConfig = {
-      gradle: {
-        enabled: false,
-      },
       'gradle-lite': {
         enabled: true,
         fileMatch: ['foo'],

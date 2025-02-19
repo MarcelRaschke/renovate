@@ -21,15 +21,12 @@ export function massageConfig(config: RenovateConfig): RenovateConfig {
   for (const [key, val] of Object.entries(config)) {
     if (allowedStrings.includes(key) && is.string(val)) {
       massagedConfig[key] = [val];
-    } else if (key === 'npmToken' && is.string(val) && val.length < 50) {
-      massagedConfig.npmrc = `//registry.npmjs.org/:_authToken=${val}\n`;
-      delete massagedConfig.npmToken;
     } else if (is.array(val)) {
       massagedConfig[key] = [];
       val.forEach((item) => {
         if (is.object(item)) {
           (massagedConfig[key] as RenovateConfig[]).push(
-            massageConfig(item as RenovateConfig)
+            massageConfig(item as RenovateConfig),
           );
         } else {
           (massagedConfig[key] as unknown[]).push(item);
@@ -53,7 +50,7 @@ export function massageConfig(config: RenovateConfig): RenovateConfig {
       newRules.push(rule);
       for (const [key, val] of Object.entries(rule) as [
         UpdateType,
-        PackageRule
+        PackageRule,
       ][]) {
         if (updateTypes.includes(key)) {
           let newRule = clone(rule);
@@ -77,7 +74,7 @@ export function massageConfig(config: RenovateConfig): RenovateConfig {
     newRules = newRules.filter((rule) => {
       if (
         Object.keys(rule).every(
-          (key) => key.startsWith('match') || key.startsWith('exclude')
+          (key) => key.startsWith('match') || key.startsWith('exclude'),
         )
       ) {
         // Exclude rules which contain only match or exclude options

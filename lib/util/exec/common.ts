@@ -1,6 +1,10 @@
-import { ChildProcess, spawn } from 'node:child_process';
-import { ExecError, ExecErrorData } from './exec-error';
-import type { ExecResult, RawExecOptions } from './types';
+import type { ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import type { Readable } from 'node:stream';
+import is from '@sindresorhus/is';
+import type { ExecErrorData } from './exec-error';
+import { ExecError } from './exec-error';
+import type { DataListener, ExecResult, RawExecOptions } from './types';
 
 // https://man7.org/linux/man-pages/man7/signal.7.html#NAME
 // Non TERM/CORE signals
@@ -25,12 +29,15 @@ function stringify(list: Buffer[]): string {
 
 function initStreamListeners(
   cp: ChildProcess,
-  opts: RawExecOptions & { maxBuffer: number }
+  opts: RawExecOptions & { maxBuffer: number },
 ): [Buffer[], Buffer[]] {
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
   let stdoutLen = 0;
   let stderrLen = 0;
+
+  registerDataListeners(cp.stdout, opts.outputListeners?.stdout);
+  registerDataListeners(cp.stderr, opts.outputListeners?.stderr);
 
   cp.stdout?.on('data', (chunk: Buffer) => {
     // process.stdout.write(data.toString());
@@ -54,6 +61,19 @@ function initStreamListeners(
     }
   });
   return [stdout, stderr];
+}
+
+function registerDataListeners(
+  readable: Readable | null,
+  dataListeners: DataListener[] | undefined,
+): void {
+  if (is.nullOrUndefined(readable) || is.nullOrUndefined(dataListeners)) {
+    return;
+  }
+
+  for (const listener of dataListeners) {
+    readable.on('data', listener);
+  }
 }
 
 export function exec(cmd: string, opts: RawExecOptions): Promise<ExecResult> {
@@ -90,7 +110,7 @@ export function exec(cmd: string, opts: RawExecOptions): Promise<ExecResult> {
           new ExecError(`Command failed: ${cmd}\nInterrupted by ${signal}`, {
             ...rejectInfo(),
             signal,
-          })
+          }),
         );
         return;
       }
@@ -99,7 +119,7 @@ export function exec(cmd: string, opts: RawExecOptions): Promise<ExecResult> {
           new ExecError(`Command failed: ${cmd}\n${stringify(stderr)}`, {
             ...rejectInfo(),
             exitCode: code,
-          })
+          }),
         );
         return;
       }
@@ -139,7 +159,7 @@ function kill(cp: ChildProcess, signal: NodeJS.Signals): boolean {
       cp.unref();
       return cp.kill(signal);
     }
-  } catch (err) {
+  } catch {
     // cp is a single node tree, therefore -pid is invalid as there is no such pgid,
     return false;
   }
@@ -147,5 +167,5 @@ function kill(cp: ChildProcess, signal: NodeJS.Signals): boolean {
 
 export const rawExec: (
   cmd: string,
-  opts: RawExecOptions
+  opts: RawExecOptions,
 ) => Promise<ExecResult> = exec;

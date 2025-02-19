@@ -1,11 +1,15 @@
 export const repoInfoQuery = `
-query($owner: String!, $name: String!) {
+query($owner: String!, $name: String!, $user: String!) {
   repository(owner: $owner, name: $name) {
     id
     isFork
+    parent {
+      nameWithOwner
+    }
     isArchived
     nameWithOwner
     hasIssuesEnabled
+    hasVulnerabilityAlertsEnabled
     autoMergeAllowed
     mergeCommitAllowed
     rebaseMergeAllowed
@@ -16,76 +20,17 @@ query($owner: String!, $name: String!) {
         oid
       }
     }
-  }
-}
-`;
-
-export const closedPrsQuery = `
-query($owner: String!, $name: String!, $count: Int, $cursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequests(
-      states: [CLOSED, MERGED],
-      orderBy: {
-        field: UPDATED_AT,
-        direction: DESC
-      },
-      first: $count,
-      after: $cursor
+    issues(
+      orderBy: { field: UPDATED_AT, direction: DESC },
+      filterBy: { createdBy: $user },
+      first: 5
     ) {
-      pageInfo {
-        endCursor
-        hasNextPage
-      }
       nodes {
         number
         state
-        headRefName
         title
-        comments(last: 100) {
-          nodes {
-            databaseId
-            body
-          }
-        }
-      }
-    }
-  }
-}
-`;
-
-export const openPrsQuery = `
-query($owner: String!, $name: String!, $count: Int, $cursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequests(
-      states: [OPEN],
-      orderBy: {
-        field: UPDATED_AT,
-        direction: DESC
-      },
-      first: $count,
-      after: $cursor
-    ) {
-      pageInfo {
-        endCursor
-        hasNextPage
-      }
-      nodes {
-        number
-        headRefName
-        baseRefName
-        title
-        labels(last: 100) {
-          nodes {
-            name
-          }
-        }
-        assignees {
-          totalCount
-        }
-        reviewRequests {
-          totalCount
-        }
         body
+        updatedAt
       }
     }
   }
@@ -96,7 +41,7 @@ export const getIssuesQuery = `
 query(
   $owner: String!,
   $name: String!,
-  $user: String!,
+  $user: String,
   $count: Int,
   $cursor: String
 ) {
@@ -116,34 +61,7 @@ query(
         state
         title
         body
-      }
-    }
-  }
-}
-`;
-
-export const vulnerabilityAlertsQuery = (filterByState: boolean): string => `
-query($owner: String!, $name: String!) {
-  repository(owner: $owner, name: $name) {
-    vulnerabilityAlerts(last: 100, ${filterByState ? 'states: [OPEN]' : ''}) {
-      edges {
-        node {
-          dismissReason
-          vulnerableManifestFilename
-          vulnerableManifestPath
-          vulnerableRequirements
-          securityAdvisory {
-            description
-            identifiers { type value }
-            references { url }
-            severity
-          }
-          securityVulnerability {
-            package { name ecosystem }
-            firstPatchedVersion { identifier }
-            vulnerableVersionRange
-          }
-        }
+        updatedAt
       }
     }
   }

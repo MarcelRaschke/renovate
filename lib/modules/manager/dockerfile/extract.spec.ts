@@ -1,3 +1,4 @@
+import { codeBlock } from 'common-tags';
 import { Fixtures } from '../../../../test/fixtures';
 import type { PackageDependency } from '../types';
 import { extractVariables, getDep } from './extract';
@@ -25,8 +26,45 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'final',
           replaceString: 'node',
+        },
+      ]);
+    });
+
+    it('handles run --mount=from', () => {
+      const res = extractPackageFile(
+        'FROM scratch as build\n' +
+          'FROM scratch as final\n' +
+          'RUN --mount=from=ghcr.io/astral-sh/uv,source=/uv,target=/bin/uv uv pip install numpy\n' +
+          'RUN --mount=type=cache,from=example.com/cache/image,target=/root/.cache pip install numpy\n' +
+          'RUN --mount=type=bind,from=build,source=/project/dist/lib.whl,target=/dist/lib.whl pip install /dist/lib.whl\n',
+        '',
+        {},
+      )?.deps;
+      expect(res).toEqual([
+        {
+          autoReplaceStringTemplate:
+            '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+          currentDigest: undefined,
+          currentValue: undefined,
+          datasource: 'docker',
+          depName: 'ghcr.io/astral-sh/uv',
+          packageName: 'ghcr.io/astral-sh/uv',
+          depType: 'stage',
+          replaceString: 'ghcr.io/astral-sh/uv',
+        },
+        {
+          autoReplaceStringTemplate:
+            '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+          currentDigest: undefined,
+          currentValue: undefined,
+          datasource: 'docker',
+          depName: 'example.com/cache/image',
+          packageName: 'example.com/cache/image',
+          depType: 'final',
+          replaceString: 'example.com/cache/image',
         },
       ]);
     });
@@ -41,6 +79,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'final',
           replaceString: 'node',
         },
@@ -57,6 +96,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8.9.0-alpine',
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'final',
           replaceString: 'node:8.9.0-alpine',
         },
@@ -67,7 +107,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM node@sha256:eb85fc5b1198f5e1ec025ea07586bdbbf397e7d82df66c90d7511f533517e063\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -78,6 +118,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'final',
           replaceString:
             'node@sha256:eb85fc5b1198f5e1ec025ea07586bdbbf397e7d82df66c90d7511f533517e063',
@@ -89,7 +130,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM node:8.9.0@sha256:eb85fc5b1198f5e1ec025ea07586bdbbf397e7d82df66c90d7511f533517e063\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -100,6 +141,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8.9.0',
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'final',
           replaceString:
             'node:8.9.0@sha256:eb85fc5b1198f5e1ec025ea07586bdbbf397e7d82df66c90d7511f533517e063',
@@ -111,7 +153,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM node:8.9.0-alpine as base\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -121,6 +163,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8.9.0-alpine',
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'final',
           replaceString: 'node:8.9.0-alpine',
         },
@@ -131,7 +174,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         '# some comment\n# another\n\nFROM node\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -141,6 +184,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'final',
           replaceString: 'node',
         },
@@ -151,7 +195,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM registry2.something.info/node:8\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -161,6 +205,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8',
           datasource: 'docker',
           depName: 'registry2.something.info/node',
+          packageName: 'registry2.something.info/node',
           depType: 'final',
           replaceString: 'registry2.something.info/node:8',
         },
@@ -171,7 +216,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM registry2.something.info/node:8-alpine\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -181,6 +226,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8-alpine',
           datasource: 'docker',
           depName: 'registry2.something.info/node',
+          packageName: 'registry2.something.info/node',
           depType: 'final',
           replaceString: 'registry2.something.info/node:8-alpine',
         },
@@ -191,7 +237,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM registry2.something.info:5005/node:8\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -201,6 +247,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8',
           datasource: 'docker',
           depName: 'registry2.something.info:5005/node',
+          packageName: 'registry2.something.info:5005/node',
           depType: 'final',
           replaceString: 'registry2.something.info:5005/node:8',
         },
@@ -211,7 +258,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM registry2.something.info:5005/node\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -221,6 +268,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'registry2.something.info:5005/node',
+          packageName: 'registry2.something.info:5005/node',
           depType: 'final',
           replaceString: 'registry2.something.info:5005/node',
         },
@@ -254,6 +302,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8',
           datasource: 'docker',
           depName: 'mynamespace/node',
+          packageName: 'mynamespace/node',
           depType: 'final',
           replaceString: 'mynamespace/node:8',
         },
@@ -264,7 +313,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM registry2.something.info/someaccount/node:8\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -274,6 +323,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8',
           datasource: 'docker',
           depName: 'registry2.something.info/someaccount/node',
+          packageName: 'registry2.something.info/someaccount/node',
           depType: 'final',
           replaceString: 'registry2.something.info/someaccount/node:8',
         },
@@ -284,7 +334,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM    registry.allmine.info:5005/node:8.7.0\n\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -294,6 +344,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8.7.0',
           datasource: 'docker',
           depName: 'registry.allmine.info:5005/node',
+          packageName: 'registry.allmine.info:5005/node',
           depType: 'final',
           replaceString: 'registry.allmine.info:5005/node:8.7.0',
         },
@@ -304,7 +355,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM node:6.12.3 as frontend\n\n# comment\nENV foo=bar\nFROM python:3.6-slim\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -314,6 +365,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '6.12.3',
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'stage',
           replaceString: 'node:6.12.3',
         },
@@ -324,8 +376,30 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '3.6-slim',
           datasource: 'docker',
           depName: 'python',
+          packageName: 'python',
           depType: 'final',
           replaceString: 'python:3.6-slim',
+        },
+      ]);
+    });
+
+    it('extracts tags from Dockerfile which begins with a BOM marker', () => {
+      const res = extractPackageFile(
+        '\uFEFFFROM node:6.12.3 as frontend\n\n',
+        '',
+        {},
+      )?.deps;
+      expect(res).toEqual([
+        {
+          autoReplaceStringTemplate:
+            '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+          currentDigest: undefined,
+          currentValue: '6.12.3',
+          datasource: 'docker',
+          depName: 'node',
+          packageName: 'node',
+          depType: 'final',
+          replaceString: 'node:6.12.3',
         },
       ]);
     });
@@ -339,7 +413,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM node:6.12.3 as frontend\n\n# comment\nENV foo=bar\nFROM frontend\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -349,6 +423,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '6.12.3',
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'final',
           replaceString: 'node:6.12.3',
         },
@@ -359,7 +434,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM scratch\nCOPY --from=gcr.io/k8s-skaffold/skaffold:v0.11.0 /usr/bin/skaffold /usr/bin/skaffold\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -369,17 +444,44 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: 'v0.11.0',
           datasource: 'docker',
           depName: 'gcr.io/k8s-skaffold/skaffold',
+          packageName: 'gcr.io/k8s-skaffold/skaffold',
           depType: 'final',
           replaceString: 'gcr.io/k8s-skaffold/skaffold:v0.11.0',
         },
       ]);
     });
 
+    it('handles COPY --link --from', () => {
+      const res = extractPackageFile(
+        codeBlock`
+          FROM scratch
+          COPY --link --from=gcr.io/k8s-skaffold/skaffold:v0.11.0 /usr/bin/skaffold /usr/bin/skaffold
+        `,
+        '',
+        {},
+      );
+      expect(res).toEqual({
+        deps: [
+          {
+            autoReplaceStringTemplate:
+              '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+            currentDigest: undefined,
+            currentValue: 'v0.11.0',
+            datasource: 'docker',
+            depName: 'gcr.io/k8s-skaffold/skaffold',
+            packageName: 'gcr.io/k8s-skaffold/skaffold',
+            depType: 'final',
+            replaceString: 'gcr.io/k8s-skaffold/skaffold:v0.11.0',
+          },
+        ],
+      });
+    });
+
     it('skips named multistage COPY --from tags', () => {
       const res = extractPackageFile(
         'FROM node:6.12.3 as frontend\n\n# comment\nENV foo=bar\nCOPY --from=frontend /usr/bin/node /usr/bin/node\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -389,6 +491,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '6.12.3',
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'final',
           replaceString: 'node:6.12.3',
         },
@@ -399,7 +502,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'FROM node:6.12.3 as frontend\n\n# comment\nENV foo=bar\nCOPY --from=0 /usr/bin/node /usr/bin/node\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -409,6 +512,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '6.12.3',
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'final',
           replaceString: 'node:6.12.3',
         },
@@ -417,9 +521,9 @@ describe('modules/manager/dockerfile/extract', () => {
 
     it('detects ["stage"] and ["final"] deps of docker multi-stage build.', () => {
       const res = extractPackageFile(
-        'FROM node:8.15.1-alpine as skippedfrom\nFROM golang:1.7.3 as builder\n\n# comment\nWORKDIR /go/src/github.com/alexellis/href-counter/\nRUN go get -d -v golang.org/x/net/html  \nCOPY app.go    .\nRUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o app .\n\nFROM alpine:latest  \nRUN apk --no-cache add ca-certificates\nWORKDIR /root/\nCOPY --from=builder /go/src/github.com/alexellis/href-counter/app .\nCMD ["./app"]\n',
+        'FROM node:8.15.1-alpine as skippedfrom\nFROM golang:1.23.3 as builder\n\n# comment\nWORKDIR /go/src/github.com/alexellis/href-counter/\nRUN go get -d -v golang.org/x/net/html  \nCOPY app.go    .\nRUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o app .\n\nFROM alpine:latest  \nRUN apk --no-cache add ca-certificates\nWORKDIR /root/\nCOPY --from=builder /go/src/github.com/alexellis/href-counter/app .\nCMD ["./app"]\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -429,6 +533,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8.15.1-alpine',
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'stage',
           replaceString: 'node:8.15.1-alpine',
         },
@@ -436,11 +541,12 @@ describe('modules/manager/dockerfile/extract', () => {
           autoReplaceStringTemplate:
             '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
           currentDigest: undefined,
-          currentValue: '1.7.3',
+          currentValue: '1.23.3',
           datasource: 'docker',
           depName: 'golang',
+          packageName: 'golang',
           depType: 'stage',
-          replaceString: 'golang:1.7.3',
+          replaceString: 'golang:1.23.3',
         },
         {
           autoReplaceStringTemplate:
@@ -449,6 +555,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: 'latest',
           datasource: 'docker',
           depName: 'alpine',
+          packageName: 'alpine',
           depType: 'final',
           replaceString: 'alpine:latest',
         },
@@ -472,6 +579,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '8.11.3-alpine',
           datasource: 'docker',
           depName: 'node',
+          packageName: 'node',
           depType: 'stage',
           replaceString:
             'node:8.11.3-alpine@sha256:d743b4141b02fcfb8beb68f92b4cd164f60ee457bf2d053f36785bf86de16b0d',
@@ -483,6 +591,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '1.1.1',
           datasource: 'docker',
           depName: 'buildkite/puppeteer',
+          packageName: 'buildkite/puppeteer',
           depType: 'final',
           replaceString: 'buildkite/puppeteer:1.1.1',
         },
@@ -499,6 +608,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'image1',
+          packageName: 'image1',
           depType: 'stage',
           replaceString: 'image1',
         },
@@ -509,6 +619,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '1.0.0',
           datasource: 'docker',
           depName: 'image2',
+          packageName: 'image2',
           depType: 'stage',
           replaceString: 'image2:1.0.0@sha256:abcdef',
         },
@@ -519,6 +630,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'image4',
+          packageName: 'image4',
           depType: 'stage',
           replaceString: 'image4',
         },
@@ -529,6 +641,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'image5',
+          packageName: 'image5',
           depType: 'stage',
           replaceString: 'image5',
         },
@@ -539,6 +652,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'image6',
+          packageName: 'image6',
           depType: 'stage',
           replaceString: 'image6',
         },
@@ -549,6 +663,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '1.0.0',
           datasource: 'docker',
           depName: 'image7',
+          packageName: 'image7',
           depType: 'stage',
           replaceString: 'image7:1.0.0@sha256:abcdef',
         },
@@ -559,6 +674,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'image11',
+          packageName: 'image11',
           depType: 'stage',
           replaceString: 'image11',
         },
@@ -569,6 +685,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'image12',
+          packageName: 'image12',
           depType: 'stage',
           replaceString: 'image12',
         },
@@ -579,6 +696,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'image13',
+          packageName: 'image13',
           depType: 'final',
           replaceString: 'image13',
         },
@@ -595,6 +713,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'calico/node',
+          packageName: 'calico/node',
           depType: 'final',
           replaceString: 'calico/node',
         },
@@ -611,6 +730,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '18.04',
           datasource: 'docker',
           depName: 'ubuntu',
+          packageName: 'ubuntu',
           depType: 'final',
           replaceString: 'ubuntu:18.04',
           versioning: 'ubuntu',
@@ -628,6 +748,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: 'buster',
           datasource: 'docker',
           depName: 'debian',
+          packageName: 'debian',
           depType: 'final',
           replaceString: 'debian:buster',
           versioning: 'debian',
@@ -645,6 +766,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '11.4-slim',
           datasource: 'docker',
           depName: 'debian',
+          packageName: 'debian',
           depType: 'final',
           replaceString: 'debian:11.4-slim',
         },
@@ -669,6 +791,28 @@ describe('modules/manager/dockerfile/extract', () => {
       ]);
     });
 
+    it('handles debian with prefixes and registries', () => {
+      const res = extractPackageFile(
+        'FROM docker.io/library/debian:10\n',
+        '',
+        {},
+      )?.deps;
+      expect(res).toEqual([
+        {
+          autoReplaceStringTemplate:
+            '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+          currentDigest: undefined,
+          currentValue: '10',
+          datasource: 'docker',
+          depName: 'docker.io/library/debian',
+          packageName: 'docker.io/library/debian',
+          depType: 'final',
+          replaceString: 'docker.io/library/debian:10',
+          versioning: 'debian',
+        },
+      ]);
+    });
+
     it('handles prefixes', () => {
       const res = extractPackageFile('FROM amd64/ubuntu:18.04\n', '', {})?.deps;
       expect(res).toEqual([
@@ -687,11 +831,33 @@ describe('modules/manager/dockerfile/extract', () => {
       ]);
     });
 
+    it('handles prefixes with registries', () => {
+      const res = extractPackageFile(
+        'FROM public.ecr.aws/ubuntu/ubuntu:18.04\n',
+        '',
+        {},
+      )?.deps;
+      expect(res).toEqual([
+        {
+          autoReplaceStringTemplate:
+            '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+          currentDigest: undefined,
+          currentValue: '18.04',
+          datasource: 'docker',
+          depName: 'public.ecr.aws/ubuntu/ubuntu',
+          packageName: 'public.ecr.aws/ubuntu/ubuntu',
+          depType: 'final',
+          replaceString: 'public.ecr.aws/ubuntu/ubuntu:18.04',
+          versioning: 'ubuntu',
+        },
+      ]);
+    });
+
     it('handles implausible line continuation', () => {
       const res = extractPackageFile(
         'FROM alpine:3.5\n\nRUN something \\',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -701,6 +867,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '3.5',
           datasource: 'docker',
           depName: 'alpine',
+          packageName: 'alpine',
           depType: 'final',
           replaceString: 'alpine:3.5',
         },
@@ -717,6 +884,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '1.20',
           datasource: 'docker',
           depName: 'nginx',
+          packageName: 'nginx',
           depType: 'final',
           replaceString: 'nginx:1.20',
         },
@@ -727,7 +895,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'ARG img_base\nFROM $img_base\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -745,7 +913,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'ARG patch1=""\nARG patch2=\nFROM nginx:1.20${patch1}$patch2\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -755,6 +923,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '1.20',
           datasource: 'docker',
           depName: 'nginx',
+          packageName: 'nginx',
           depType: 'final',
           replaceString: 'FROM nginx:1.20${patch1}$patch2\n',
         },
@@ -765,7 +934,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'ARG\tVARIANT="1.60.0-bullseye" \nFROM\trust:${VARIANT}\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -775,6 +944,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '1.60.0-bullseye',
           datasource: 'docker',
           depName: 'rust',
+          packageName: 'rust',
           depType: 'final',
           replaceString: 'ARG\tVARIANT="1.60.0-bullseye" \n',
         },
@@ -785,7 +955,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'ARG IMAGE_VERSION=${IMAGE_VERSION:-ubuntu:xenial}\nfrom ${IMAGE_VERSION} as base\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -794,6 +964,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: 'xenial',
           datasource: 'docker',
           depName: 'ubuntu',
+          packageName: 'ubuntu',
           depType: 'final',
           replaceString: 'ARG IMAGE_VERSION=${IMAGE_VERSION:-ubuntu:xenial}\n',
           versioning: 'ubuntu',
@@ -806,7 +977,7 @@ describe('modules/manager/dockerfile/extract', () => {
         'ARG sha_digest=sha256:ab37242e81cbc031b2600eef4440fe87055a05c14b40686df85078cc5086c98f\n' +
           '      FROM gcr.io/distroless/java17@$sha_digest',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -817,6 +988,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'gcr.io/distroless/java17',
+          packageName: 'gcr.io/distroless/java17',
           depType: 'final',
           replaceString:
             'ARG sha_digest=sha256:ab37242e81cbc031b2600eef4440fe87055a05c14b40686df85078cc5086c98f',
@@ -828,7 +1000,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'ARG base=nginx:1.19\nFROM $base as stage1\nARG base=nginx:1.20\nFROM --platform=amd64 $base as stage2\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -838,6 +1010,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '1.19',
           datasource: 'docker',
           depName: 'nginx',
+          packageName: 'nginx',
           depType: 'stage',
           replaceString: 'ARG base=nginx:1.19\n',
         },
@@ -848,6 +1021,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '1.20',
           datasource: 'docker',
           depName: 'nginx',
+          packageName: 'nginx',
           depType: 'final',
           replaceString: 'ARG base=nginx:1.20\n',
         },
@@ -858,7 +1032,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'ARG CUDA=9.2\nARG LINUX_VERSION ubuntu16.04\nFROM nvidia/cuda:${CUDA}-devel-${LINUX_VERSION}\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -868,6 +1042,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '9.2-devel-ubuntu16.04',
           datasource: 'docker',
           depName: 'nvidia/cuda',
+          packageName: 'nvidia/cuda',
           depType: 'final',
           replaceString: 'nvidia/cuda:9.2-devel-ubuntu16.04',
         },
@@ -878,7 +1053,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'ARG img="scratch"\nFROM $img as base\n',
         '',
-        {}
+        {},
       );
       expect(res).toBeNull();
     });
@@ -895,6 +1070,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '3.15.4',
           datasource: 'docker',
           depName: 'alpine',
+          packageName: 'alpine',
           depType: 'stage',
           replaceString:
             ' ARG \\\n' +
@@ -913,6 +1089,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '1.18.0-alpine',
           datasource: 'docker',
           depName: 'nginx',
+          packageName: 'nginx',
           depType: 'final',
           replaceString:
             'ARG   \\\n' +
@@ -928,7 +1105,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         '# dummy\n# escape = `\n\nFROM\\\nnginx:1.20',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -938,6 +1115,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '1.20',
           datasource: 'docker',
           depName: 'nginx',
+          packageName: 'nginx',
           depType: 'final',
           replaceString: 'nginx:1.20',
         },
@@ -949,6 +1127,17 @@ describe('modules/manager/dockerfile/extract', () => {
       expect(res).toEqual([
         {
           autoReplaceStringTemplate:
+            '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+          currentDigest: undefined,
+          currentValue: '1',
+          datasource: 'docker',
+          depName: 'docker/dockerfile',
+          packageName: 'docker/dockerfile',
+          depType: 'syntax',
+          replaceString: 'docker/dockerfile:1',
+        },
+        {
+          autoReplaceStringTemplate:
             ' ARG `\n' +
             '\t# multi-line arg\n' +
             '   ALPINE_VERSION=alpine:{{#if newValue}}{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}\n',
@@ -956,6 +1145,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '3.15.4',
           datasource: 'docker',
           depName: 'alpine',
+          packageName: 'alpine',
           depType: 'stage',
           replaceString:
             ' ARG `\n' +
@@ -973,6 +1163,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '18.04',
           datasource: 'docker',
           depName: 'nginx',
+          packageName: 'nginx',
           depType: 'stage',
           replaceString:
             'ARG   `\n' +
@@ -988,6 +1179,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'image5',
+          packageName: 'image5',
           depType: 'stage',
           replaceString: 'image5',
         },
@@ -998,6 +1190,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: undefined,
           datasource: 'docker',
           depName: 'image12',
+          packageName: 'image12',
           depType: 'final',
           replaceString: 'image12',
         },
@@ -1008,7 +1201,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'ARG REF_NAME=${REF_NAME:-"gcr.io/distroless/static-debian11:nonroot@sha256:abc"}\nfrom ${REF_NAME}',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -1018,6 +1211,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: 'nonroot',
           datasource: 'docker',
           depName: 'gcr.io/distroless/static-debian11',
+          packageName: 'gcr.io/distroless/static-debian11',
           depType: 'final',
           replaceString:
             'ARG REF_NAME=${REF_NAME:-"gcr.io/distroless/static-debian11:nonroot@sha256:abc"}',
@@ -1029,7 +1223,7 @@ describe('modules/manager/dockerfile/extract', () => {
       const res = extractPackageFile(
         'ARG IMAGE_TAG=14.04\r\n#something unrelated\r\nFROM ubuntu:$IMAGE_TAG@sha256:abc\r\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -1039,6 +1233,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '14.04',
           datasource: 'docker',
           depName: 'ubuntu',
+          packageName: 'ubuntu',
           depType: 'final',
           replaceString:
             'ARG IMAGE_TAG=14.04\r\n#something unrelated\r\nFROM ubuntu:$IMAGE_TAG@sha256:abc',
@@ -1057,7 +1252,7 @@ describe('modules/manager/dockerfile/extract', () => {
           'ARG DUMMY_PREFIX=\n' +
           'FROM ${DUMMY_PREFIX}${NODE_IMAGE_HOST}${NODE_IMAGE_NAME}:${NODE_IMAGE_TAG}${NODE_IMAGE_HASH} as yarn\n',
         '',
-        {}
+        {},
       )?.deps;
       expect(res).toEqual([
         {
@@ -1071,6 +1266,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '16.14.2-alpine3.14',
           datasource: 'docker',
           depName: 'docker.io/library/node',
+          packageName: 'docker.io/library/node',
           depType: 'final',
           replaceString:
             'ARG NODE_IMAGE_HASH="@sha256:ba9c961513b853210ae0ca1524274eafa5fd94e20b856343887ca7274c8450e4"\n' +
@@ -1086,7 +1282,7 @@ describe('modules/manager/dockerfile/extract', () => {
     const res = extractPackageFile(
       'FROM quay.io/myName/myPackage:0.6.2\n',
       '',
-      {}
+      {},
     );
     expect(res).toEqual({
       deps: [
@@ -1097,6 +1293,7 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '0.6.2',
           datasource: 'docker',
           depName: 'quay.io/myName/myPackage',
+          packageName: 'quay.io/myName/myPackage',
           depType: 'final',
           replaceString: 'quay.io/myName/myPackage:0.6.2',
         },
@@ -1113,7 +1310,7 @@ describe('modules/manager/dockerfile/extract', () => {
           'quay.io': 'my-quay-mirror.registry.com',
           'index.docker.io': 'my-docker-mirror.registry.com',
         },
-      }
+      },
     );
     expect(res).toEqual({
       deps: [
@@ -1123,9 +1320,37 @@ describe('modules/manager/dockerfile/extract', () => {
           currentDigest: undefined,
           currentValue: '0.6.2',
           datasource: 'docker',
-          depName: 'my-quay-mirror.registry.com/myName/myPackage',
+          depName: 'quay.io/myName/myPackage',
+          packageName: 'my-quay-mirror.registry.com/myName/myPackage',
           depType: 'final',
           replaceString: 'quay.io/myName/myPackage:0.6.2',
+        },
+      ],
+    });
+  });
+
+  it('replaces registry alias from start only', () => {
+    const res = extractPackageFile(
+      'FROM index.docker.io/myName/myPackage:0.6.2\n',
+      'Dockerfile',
+      {
+        registryAliases: {
+          'docker.io': 'my-docker-mirror.registry.com',
+        },
+      },
+    );
+    expect(res).toEqual({
+      deps: [
+        {
+          autoReplaceStringTemplate:
+            '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+          currentDigest: undefined,
+          currentValue: '0.6.2',
+          datasource: 'docker',
+          depName: 'index.docker.io/myName/myPackage',
+          packageName: 'index.docker.io/myName/myPackage',
+          depType: 'final',
+          replaceString: 'index.docker.io/myName/myPackage:0.6.2',
         },
       ],
     });
@@ -1140,7 +1365,7 @@ describe('modules/manager/dockerfile/extract', () => {
           'quay.io': 'my-quay-mirror.registry.com',
           'index.docker.io': 'my-docker-mirror.registry.com',
         },
-      }
+      },
     );
     expect(res).toEqual({
       deps: [
@@ -1151,8 +1376,66 @@ describe('modules/manager/dockerfile/extract', () => {
           currentValue: '0.6.2',
           datasource: 'docker',
           depName: 'myName/myPackage',
+          packageName: 'myName/myPackage',
           depType: 'final',
           replaceString: 'myName/myPackage:0.6.2',
+        },
+      ],
+    });
+  });
+
+  it('handles # syntax statements', () => {
+    const res = extractPackageFile(
+      '# syntax=docker/dockerfile:1.1.7\n' + 'FROM alpine:3.13.5\n',
+      '',
+      {},
+    );
+    expect(res).toEqual({
+      deps: [
+        {
+          autoReplaceStringTemplate:
+            '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+          currentDigest: undefined,
+          currentValue: '1.1.7',
+          datasource: 'docker',
+          depName: 'docker/dockerfile',
+          packageName: 'docker/dockerfile',
+          depType: 'syntax',
+          replaceString: 'docker/dockerfile:1.1.7',
+        },
+        {
+          autoReplaceStringTemplate:
+            '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+          currentDigest: undefined,
+          currentValue: '3.13.5',
+          datasource: 'docker',
+          depName: 'alpine',
+          packageName: 'alpine',
+          depType: 'final',
+          replaceString: 'alpine:3.13.5',
+        },
+      ],
+    });
+  });
+
+  it('ignores # syntax statements after first line', () => {
+    const res = extractPackageFile(
+      'FROM alpine:3.13.5\n' + '# syntax=docker/dockerfile:1.1.7\n',
+      '',
+      {},
+    );
+    expect(res).toEqual({
+      deps: [
+        {
+          autoReplaceStringTemplate:
+            '{{depName}}{{#if newValue}}:{{newValue}}{{/if}}{{#if newDigest}}@{{newDigest}}{{/if}}',
+          currentDigest: undefined,
+          currentValue: '3.13.5',
+          datasource: 'docker',
+          depName: 'alpine',
+          packageName: 'alpine',
+          depType: 'final',
+          replaceString: 'alpine:3.13.5',
         },
       ],
     });
@@ -1176,6 +1459,7 @@ describe('modules/manager/dockerfile/extract', () => {
         currentValue: '5.0.0',
         datasource: 'docker',
         depName: 'redis',
+        packageName: 'redis',
         replaceString: 'redis:5.0.0@sha256:abcd',
       });
 
@@ -1186,6 +1470,7 @@ describe('modules/manager/dockerfile/extract', () => {
         currentValue: '5.0.0',
         datasource: 'docker',
         depName: 'redis',
+        packageName: 'redis',
         replaceString: 'redis:5.0.0',
       });
 
@@ -1196,11 +1481,12 @@ describe('modules/manager/dockerfile/extract', () => {
         currentDigest: 'sha256:abcd',
         datasource: 'docker',
         depName: 'redis',
+        packageName: 'redis',
         replaceString: 'redis@sha256:abcd',
       });
 
       const res4 = getDep(
-        '${REF_NAME:-"gcr.io/distroless/static-debian11:nonroot@sha256:abc"}'
+        '${REF_NAME:-"gcr.io/distroless/static-debian11:nonroot@sha256:abc"}',
       );
       expect(res4).toEqual({
         autoReplaceStringTemplate:
@@ -1209,11 +1495,12 @@ describe('modules/manager/dockerfile/extract', () => {
         currentValue: 'nonroot',
         datasource: 'docker',
         depName: 'gcr.io/distroless/static-debian11',
+        packageName: 'gcr.io/distroless/static-debian11',
         replaceString: 'gcr.io/distroless/static-debian11:nonroot@sha256:abc',
       });
 
       const res5 = getDep(
-        '${REF_NAME:+-gcr.io/distroless/static-debian11:nonroot@sha256:abc}'
+        '${REF_NAME:+-gcr.io/distroless/static-debian11:nonroot@sha256:abc}',
       );
       expect(res5).toEqual({
         autoReplaceStringTemplate:
@@ -1287,9 +1574,10 @@ describe('modules/manager/dockerfile/extract', () => {
 
     it.each`
       name                         | registryAliases                                         | imageName                     | dep
-      ${'multiple aliases'}        | ${{ foo: 'foo.registry.com', bar: 'bar.registry.com' }} | ${'foo/image:1.0'}            | ${{ depName: 'foo.registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `foo/image${versionAndDigestTemplate}` }}
-      ${'aliased variable'}        | ${{ $CI_REGISTRY: 'registry.com' }}                     | ${'$CI_REGISTRY/image:1.0'}   | ${{ depName: 'registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `$CI_REGISTRY/image${versionAndDigestTemplate}` }}
-      ${'variables with brackets'} | ${{ '${CI_REGISTRY}': 'registry.com' }}                 | ${'${CI_REGISTRY}/image:1.0'} | ${{ depName: 'registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `$\{CI_REGISTRY}/image${versionAndDigestTemplate}` }}
+      ${'simple aliases'}          | ${{ 'foo.com/some': 'foo.registry.com' }}               | ${'foo.com/some/image:1.0'}   | ${{ depName: 'foo.com/some/image', packageName: 'foo.registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `foo.com/some/image${versionAndDigestTemplate}` }}
+      ${'multiple aliases'}        | ${{ foo: 'foo.registry.com', bar: 'bar.registry.com' }} | ${'foo/image:1.0'}            | ${{ depName: 'foo/image', packageName: 'foo.registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `foo/image${versionAndDigestTemplate}` }}
+      ${'aliased variable'}        | ${{ $CI_REGISTRY: 'registry.com' }}                     | ${'$CI_REGISTRY/image:1.0'}   | ${{ depName: '$CI_REGISTRY/image', packageName: 'registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `$CI_REGISTRY/image${versionAndDigestTemplate}` }}
+      ${'variables with brackets'} | ${{ '${CI_REGISTRY}': 'registry.com' }}                 | ${'${CI_REGISTRY}/image:1.0'} | ${{ depName: '${CI_REGISTRY}/image', packageName: 'registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `$\{CI_REGISTRY}/image${versionAndDigestTemplate}` }}
       ${'not aliased variable'}    | ${{}}                                                   | ${'$CI_REGISTRY/image:1.0'}   | ${{ autoReplaceStringTemplate: defaultAutoReplaceStringTemplate }}
       ${'plain image'}             | ${{}}                                                   | ${'registry.com/image:1.0'}   | ${{ depName: 'registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: defaultAutoReplaceStringTemplate }}
     `(
@@ -1307,7 +1595,7 @@ describe('modules/manager/dockerfile/extract', () => {
           ...dep,
           replaceString: imageName,
         });
-      }
+      },
     );
   });
 

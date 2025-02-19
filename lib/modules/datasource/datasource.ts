@@ -4,8 +4,12 @@ import type {
   DatasourceApi,
   DigestConfig,
   GetReleasesConfig,
+  PostprocessReleaseConfig,
+  PostprocessReleaseResult,
   RegistryStrategy,
+  Release,
   ReleaseResult,
+  SourceUrlSupport,
 } from './types';
 
 export abstract class Datasource implements DatasourceApi {
@@ -25,10 +29,16 @@ export abstract class Datasource implements DatasourceApi {
 
   registryStrategy: RegistryStrategy | undefined = 'first';
 
+  releaseTimestampSupport = false;
+  releaseTimestampNote?: string | undefined;
+
+  sourceUrlSupport: SourceUrlSupport = 'none';
+  sourceUrlNote?: string | undefined;
+
   protected http: Http;
 
   abstract getReleases(
-    getReleasesConfig: GetReleasesConfig
+    getReleasesConfig: GetReleasesConfig,
   ): Promise<ReleaseResult | null>;
 
   getDigest?(config: DigestConfig, newValue?: string): Promise<string | null>;
@@ -46,16 +56,20 @@ export abstract class Datasource implements DatasourceApi {
 
       const statusCode = err.response?.statusCode;
       if (statusCode) {
-        if (statusCode === 429) {
-          throw new ExternalHostError(err);
-        }
-
-        if (statusCode >= 500 && statusCode < 600) {
+        if (statusCode === 429 || (statusCode >= 500 && statusCode < 600)) {
           throw new ExternalHostError(err);
         }
       }
     }
 
     throw err;
+  }
+
+  // istanbul ignore next: no-op implementation, never called
+  postprocessRelease(
+    _config: PostprocessReleaseConfig,
+    release: Release,
+  ): Promise<PostprocessReleaseResult> {
+    return Promise.resolve(release);
   }
 }

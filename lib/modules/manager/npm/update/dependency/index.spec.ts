@@ -1,5 +1,6 @@
 import * as npmUpdater from '../..';
 import { Fixtures } from '../../../../../../test/fixtures';
+import { type Upgrade } from '../../../types';
 
 const readFixture = (x: string): string => Fixtures.get(x, '../..');
 
@@ -154,7 +155,7 @@ describe('modules/manager/npm/update/dependency/index', () => {
         upgrade,
       });
       expect(JSON.parse(testContent!).resolutions['**/@angular/cli']).toBe(
-        '8.1.0'
+        '8.1.0',
       );
     });
 
@@ -254,6 +255,23 @@ describe('modules/manager/npm/update/dependency/index', () => {
       expect(JSON.parse(testContent!).dependencies.abc).toBe('2.0.0');
     });
 
+    it('supports alias-based replacement', () => {
+      const upgrade: Upgrade = {
+        depType: 'dependencies',
+        depName: 'config',
+        newName: 'abc',
+        replacementApproach: 'alias',
+        newValue: '2.0.0',
+      };
+      const testContent = npmUpdater.updateDependency({
+        fileContent: input01Content,
+        upgrade,
+      });
+      expect(JSON.parse(testContent!).dependencies.config).toBe(
+        'npm:abc@2.0.0',
+      );
+    });
+
     it('replaces glob package resolutions', () => {
       const upgrade = {
         depType: 'dependencies',
@@ -339,6 +357,61 @@ describe('modules/manager/npm/update/dependency/index', () => {
           "awesome-typescript-loader": {
            "typescript": "0.60.0"
          }
+        }
+      }`;
+      const testContent = npmUpdater.updateDependency({
+        fileContent: overrideDependencies,
+        upgrade,
+      });
+      expect(testContent).toEqual(expected);
+    });
+
+    it('handles override dependency object where lastParent === depName', () => {
+      const upgrade = {
+        depType: 'overrides',
+        depName: 'typescript',
+        newValue: '0.60.0',
+        managerData: { parents: ['typescript'] },
+      };
+      const overrideDependencies = `{
+        "overrides": {
+          "typescript": {
+           ".": "3.0.0"
+         }
+        }
+      }`;
+      const expected = `{
+        "overrides": {
+          "typescript": {
+           ".": "0.60.0"
+         }
+        }
+      }`;
+      const testContent = npmUpdater.updateDependency({
+        fileContent: overrideDependencies,
+        upgrade,
+      });
+      expect(testContent).toEqual(expected);
+    });
+
+    it('handles pnpm.override dependency', () => {
+      const upgrade = {
+        depType: 'pnpm.overrides',
+        depName: 'typescript',
+        newValue: '0.60.0',
+      };
+      const overrideDependencies = `{
+        "pnpm": {
+          "overrides": {
+            "typescript": "0.0.5"
+          }
+        }
+      }`;
+      const expected = `{
+        "pnpm": {
+          "overrides": {
+            "typescript": "0.60.0"
+          }
         }
       }`;
       const testContent = npmUpdater.updateDependency({

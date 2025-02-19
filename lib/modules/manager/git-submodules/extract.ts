@@ -1,5 +1,6 @@
 import URL from 'node:url';
-import Git, { SimpleGit } from 'simple-git';
+import type { SimpleGit } from 'simple-git';
+import Git from 'simple-git';
 import upath from 'upath';
 import { GlobalConfig } from '../../../config/global';
 import { logger } from '../../../logger';
@@ -8,13 +9,14 @@ import { simpleGitConfig } from '../../../util/git/config';
 import { getHttpUrl } from '../../../util/git/url';
 import { regEx } from '../../../util/regex';
 import { GitRefsDatasource } from '../../datasource/git-refs';
+import * as semVerVersioning from '../../versioning/semver';
 import type { ExtractConfig, PackageFileContent } from '../types';
 import type { GitModule } from './types';
 
 async function getUrl(
   git: SimpleGit,
   gitModulesPath: string,
-  submoduleName: string
+  submoduleName: string,
 ): Promise<string> {
   const path = (
     await Git(simpleGitConfig()).raw([
@@ -37,7 +39,10 @@ async function getUrl(
 const headRefRe = regEx(/ref: refs\/heads\/(?<branch>\w+)\s/);
 
 async function getDefaultBranch(subModuleUrl: string): Promise<string> {
-  const gitSubmoduleAuthEnvironmentVariables = getGitEnvironmentVariables();
+  const gitSubmoduleAuthEnvironmentVariables = getGitEnvironmentVariables([
+    'git-tags',
+    'git-refs',
+  ]);
   const gitEnv = {
     // pass all existing env variables
     ...process.env,
@@ -51,24 +56,29 @@ async function getDefaultBranch(subModuleUrl: string): Promise<string> {
 }
 
 async function getBranch(
+  git: SimpleGit,
   gitModulesPath: string,
   submoduleName: string,
-  subModuleUrl: string
+  subModuleUrl: string,
 ): Promise<string> {
-  return (
-    (await Git(simpleGitConfig()).raw([
+  const branchFromConfig = (
+    await Git(simpleGitConfig()).raw([
       'config',
       '--file',
       gitModulesPath,
       '--get',
       `submodule.${submoduleName}.branch`,
-    ])) || (await getDefaultBranch(subModuleUrl))
+    ])
   ).trim();
+
+  return branchFromConfig === '.'
+    ? (await git.branch(['--list'])).current.trim()
+    : branchFromConfig || (await getDefaultBranch(subModuleUrl)).trim();
 }
 
 async function getModules(
   git: SimpleGit,
-  gitModulesPath: string
+  gitModulesPath: string,
 ): Promise<GitModule[]> {
   const res: GitModule[] = [];
   try {
@@ -98,7 +108,7 @@ async function getModules(
 export default async function extractPackageFile(
   _content: string,
   packageFile: string,
-  _config: ExtractConfig
+  _config: ExtractConfig,
 ): Promise<PackageFileContent | null> {
   const localDir = GlobalConfig.get('localDir');
   const git = Git(localDir, simpleGitConfig());
@@ -113,27 +123,33 @@ export default async function extractPackageFile(
   const deps = [];
   for (const { name, path } of depNames) {
     try {
-      const [currentDigest] = (await git.subModule(['status', path]))
+      const [currentDigest] = (
+        await git.subModule(['status', '--cached', path])
+      )
         .trim()
         .replace(regEx(/^[-+]/), '')
         .split(regEx(/\s/));
       const subModuleUrl = await getUrl(git, gitModulesPath, name);
       const httpSubModuleUrl = getHttpUrl(subModuleUrl);
       const currentValue = await getBranch(
+        git,
         gitModulesPath,
         name,
-        httpSubModuleUrl
+        httpSubModuleUrl,
       );
       deps.push({
         depName: path,
         packageName: httpSubModuleUrl,
         currentValue,
         currentDigest,
+        ...(semVerVersioning.api.isVersion(currentValue)
+          ? { versioning: semVerVersioning.id }
+          : {}),
       });
     } catch (err) /* istanbul ignore next */ {
       logger.warn(
         { err, packageFile },
-        'Error mapping git submodules during extraction'
+        'Error mapping git submodules during extraction',
       );
     }
   }

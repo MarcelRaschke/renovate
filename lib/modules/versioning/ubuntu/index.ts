@@ -2,6 +2,12 @@ import { regEx } from '../../../util/regex';
 import { coerceString } from '../../../util/string';
 import { DistroInfo } from '../distro';
 import type { NewValueConfig, VersioningApi } from '../types';
+import {
+  getDatedContainerImageCodename,
+  getDatedContainerImageSuffix,
+  getDatedContainerImageVersion,
+  isDatedCodeName,
+} from './common';
 
 export const id = 'ubuntu';
 export const displayName = 'Ubuntu';
@@ -16,13 +22,17 @@ const di = new DistroInfo('data/ubuntu-distro-info.json');
 // validation
 
 function isValid(input: string): boolean {
-  return (
-    (typeof input === 'string' &&
-      regEx(/^(0[4-5]|[6-9]|[1-9][0-9])\.[0-9][0-9](\.[0-9]{1,2})?$/).test(
-        input
-      )) ||
-    di.isCodename(input)
-  );
+  if (
+    regEx(/^(0[4-5]|[6-9]|[1-9][0-9])\.[0-9][0-9](\.[0-9]{1,2})?$/).test(input)
+  ) {
+    return true;
+  }
+
+  if (di.isCodename(input)) {
+    return true;
+  }
+
+  return isDatedCodeName(input);
 }
 
 function isVersion(input: string): boolean {
@@ -54,8 +64,14 @@ function isStable(version: string): boolean {
 
 // digestion of version
 
+function getVersionByCodename(version: string): string {
+  const datedImgVersion = getDatedContainerImageCodename(version);
+  const getVersion = datedImgVersion ?? version;
+  return di.getVersionByCodename(getVersion);
+}
+
 function getMajor(version: string): null | number {
-  const ver = di.getVersionByCodename(version);
+  const ver = getVersionByCodename(version);
   if (isValid(ver)) {
     const [major] = ver.split('.');
     return parseInt(major, 10);
@@ -64,7 +80,7 @@ function getMajor(version: string): null | number {
 }
 
 function getMinor(version: string): null | number {
-  const ver = di.getVersionByCodename(version);
+  const ver = getVersionByCodename(version);
   if (isValid(ver)) {
     const [, minor] = ver.split('.');
     return parseInt(minor, 10);
@@ -73,7 +89,7 @@ function getMinor(version: string): null | number {
 }
 
 function getPatch(version: string): null | number {
-  const ver = di.getVersionByCodename(version);
+  const ver = getVersionByCodename(version);
   if (isValid(ver)) {
     const [, , patch] = ver.split('.');
     return patch ? parseInt(patch, 10) : null;
@@ -84,8 +100,20 @@ function getPatch(version: string): null | number {
 // comparison
 
 function equals(version: string, other: string): boolean {
-  const ver = di.getVersionByCodename(version);
-  const otherVer = di.getVersionByCodename(other);
+  const verImage = getDatedContainerImageVersion(version);
+  const otherImageVer = getDatedContainerImageVersion(other);
+  if (verImage !== otherImageVer) {
+    return false;
+  }
+
+  const verSuffix = getDatedContainerImageSuffix(version);
+  const otherSuffix = getDatedContainerImageSuffix(other);
+  if (verSuffix !== otherSuffix) {
+    return false;
+  }
+
+  const ver = getVersionByCodename(version);
+  const otherVer = getVersionByCodename(other);
   return isVersion(ver) && isVersion(otherVer) && ver === otherVer;
 }
 
@@ -108,6 +136,24 @@ function isGreaterThan(version: string, other: string): boolean {
     return false;
   }
 
+  const xImageVersion = getDatedContainerImageVersion(version) ?? 0;
+  const yImageVersion = getDatedContainerImageVersion(other) ?? 0;
+  if (xImageVersion > yImageVersion) {
+    return true;
+  }
+  if (xImageVersion < yImageVersion) {
+    return false;
+  }
+
+  const xSuffixVersion = getDatedContainerImageSuffix(version) ?? 0;
+  const ySuffixVersion = getDatedContainerImageSuffix(other) ?? 0;
+  if (xSuffixVersion > ySuffixVersion) {
+    return true;
+  }
+  if (xSuffixVersion < ySuffixVersion) {
+    return false;
+  }
+
   const xPatch = getPatch(version) ?? 0;
   const yPatch = getPatch(other) ?? 0;
   return xPatch > yPatch;
@@ -115,14 +161,14 @@ function isGreaterThan(version: string, other: string): boolean {
 
 function getSatisfyingVersion(
   versions: string[],
-  range: string
+  range: string,
 ): string | null {
   return versions.find((version) => equals(version, range)) ? range : null;
 }
 
 function minSatisfyingVersion(
   versions: string[],
-  range: string
+  range: string,
 ): string | null {
   return getSatisfyingVersion(versions, range);
 }

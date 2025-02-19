@@ -3,6 +3,7 @@ import { CONFIG_VALIDATION } from '../../../constants/error-messages';
 import { logger } from '../../../logger';
 import type { HostRule } from '../../../types';
 import type { LegacyHostRule } from '../../../util/host-rules';
+import { massageHostUrl } from '../../../util/url';
 import { AbstractMigration } from '../base/abstract-migration';
 import { migrateDatasource } from './datasource-migration';
 
@@ -25,7 +26,7 @@ export class HostRulesMigration extends AbstractMigration {
 
         if (key === 'matchHost') {
           if (is.string(value)) {
-            newRule.matchHost ??= massageUrl(value);
+            newRule.matchHost ??= massageHostUrl(value);
           }
           continue;
         }
@@ -45,7 +46,7 @@ export class HostRulesMigration extends AbstractMigration {
           key === 'domainName'
         ) {
           if (is.string(value)) {
-            newRule.matchHost ??= massageUrl(value);
+            newRule.matchHost ??= massageHostUrl(value);
           }
           continue;
         }
@@ -77,29 +78,22 @@ function validateHostRule(rule: LegacyHostRule & HostRule): void {
     if (distinctHostValues.size > 1) {
       const error = new Error(CONFIG_VALIDATION);
       error.validationSource = 'config';
-      error.validationMessage = `hostRules cannot contain more than one host-matching field - use "matchHost" only.`;
+      error.validationMessage =
+        '`hostRules` cannot contain more than one host-matching field - use `matchHost` only.';
       error.validationError =
         'The renovate configuration file contains some invalid settings';
       throw error;
     } else {
       logger.warn(
         { hosts },
-        'Duplicate host values found, please only use `matchHost` to specify the host'
+        'Duplicate host values found, please only use `matchHost` to specify the host',
       );
     }
   }
 }
 
-function massageUrl(url: string): string {
-  if (!url.includes('://') && url.includes('/')) {
-    return 'https://' + url;
-  } else {
-    return url;
-  }
-}
-
 function removeUndefinedFields(
-  obj: Record<string, any>
+  obj: Record<string, any>,
 ): Record<string, string> {
   const result: Record<string, string> = {};
   for (const key of Object.keys(obj)) {

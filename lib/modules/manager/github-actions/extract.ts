@@ -1,19 +1,25 @@
 import is from '@sindresorhus/is';
-import { load } from 'js-yaml';
 import { GlobalConfig } from '../../../config/global';
 import { logger } from '../../../logger';
 import { isNotNullOrUndefined } from '../../../util/array';
+import { detectPlatform } from '../../../util/common';
 import { newlineRegex, regEx } from '../../../util/regex';
+import { parseSingleYaml } from '../../../util/yaml';
+import { GiteaTagsDatasource } from '../../datasource/gitea-tags';
 import { GithubRunnersDatasource } from '../../datasource/github-runners';
 import { GithubTagsDatasource } from '../../datasource/github-tags';
 import * as dockerVersioning from '../../versioning/docker';
 import { getDep } from '../dockerfile/extract';
-import type { PackageDependency, PackageFileContent } from '../types';
+import type {
+  ExtractConfig,
+  PackageDependency,
+  PackageFileContent,
+} from '../types';
 import type { Workflow } from './types';
 
-const dockerActionRe = regEx(/^\s+uses: ['"]?docker:\/\/([^'"]+)\s*$/);
+const dockerActionRe = regEx(/^\s+uses\s*: ['"]?docker:\/\/([^'"]+)\s*$/);
 const actionRe = regEx(
-  /^\s+-?\s+?uses: (?<replaceString>['"]?(?<depName>[\w-]+\/[.\w-]+)(?<path>\/.*)?@(?<currentValue>[^\s'"]+)['"]?(?:\s+#\s*(?:renovate\s*:\s*)?(?:pin\s+|tag\s*=\s*)?@?(?<tag>v?\d+(?:\.\d+(?:\.\d+)?)?))?)/
+  /^\s+-?\s+?uses\s*: (?<replaceString>['"]?(?<depName>(?<registryUrl>https:\/\/[.\w-]+\/)?(?<packageName>[\w-]+\/[.\w-]+))(?<path>\/.*)?@(?<currentValue>[^\s'"]+)['"]?(?:(?<commentWhiteSpaces>\s+)#\s*(((?:renovate\s*:\s*)?(?:pin\s+|tag\s*=\s*)?|(?:ratchet:[\w-]+\/[.\w-]+)?)@?(?<tag>([\w-]*-)?v?\d+(?:\.\d+(?:\.\d+)?)?)|(?:ratchet:exclude)))?)/,
 );
 
 // SHA1 or SHA256, see https://github.blog/2020-10-19-git-2-29-released/
@@ -34,7 +40,7 @@ function detectCustomGitHubRegistryUrlsForActions(): PackageDependency {
       parsedEndpoint.host !== 'api.github.com'
     ) {
       registryUrls.unshift(
-        `${parsedEndpoint.protocol}//${parsedEndpoint.host}`
+        `${parsedEndpoint.protocol}//${parsedEndpoint.host}`,
       );
       return { registryUrls };
     }
@@ -42,7 +48,10 @@ function detectCustomGitHubRegistryUrlsForActions(): PackageDependency {
   return {};
 }
 
-function extractWithRegex(content: string): PackageDependency[] {
+function extractWithRegex(
+  content: string,
+  config: ExtractConfig,
+): PackageDependency[] {
   const customRegistryUrlsPackageDependency =
     detectCustomGitHubRegistryUrlsForActions();
   logger.trace('github-actions.extractWithRegex()');
@@ -55,7 +64,7 @@ function extractWithRegex(content: string): PackageDependency[] {
     const dockerMatch = dockerActionRe.exec(line);
     if (dockerMatch) {
       const [, currentFrom] = dockerMatch;
-      const dep = getDep(currentFrom);
+      const dep = getDep(currentFrom, true, config.registryAliases);
       dep.depType = 'docker';
       deps.push(dep);
       continue;
@@ -65,10 +74,13 @@ function extractWithRegex(content: string): PackageDependency[] {
     if (tagMatch?.groups) {
       const {
         depName,
+        packageName,
         currentValue,
         path = '',
         tag,
         replaceString,
+        registryUrl = '',
+        commentWhiteSpaces = ' ',
       } = tagMatch.groups;
       let quotes = '';
       if (replaceString.indexOf("'") >= 0) {
@@ -79,13 +91,16 @@ function extractWithRegex(content: string): PackageDependency[] {
       }
       const dep: PackageDependency = {
         depName,
+        ...(packageName !== depName && { packageName }),
         commitMessageTopic: '{{{depName}}} action',
         datasource: GithubTagsDatasource.id,
         versioning: dockerVersioning.id,
         depType: 'action',
         replaceString,
-        autoReplaceStringTemplate: `${quotes}{{depName}}${path}@{{#if newDigest}}{{newDigest}}${quotes}{{#if newValue}} # {{newValue}}{{/if}}{{/if}}{{#unless newDigest}}{{newValue}}${quotes}{{/unless}}`,
-        ...customRegistryUrlsPackageDependency,
+        autoReplaceStringTemplate: `${quotes}{{depName}}${path}@{{#if newDigest}}{{newDigest}}${quotes}{{#if newValue}}${commentWhiteSpaces}# {{newValue}}{{/if}}{{/if}}{{#unless newDigest}}{{newValue}}${quotes}{{/unless}}`,
+        ...(registryUrl
+          ? detectDatasource(registryUrl)
+          : customRegistryUrlsPackageDependency),
       };
       if (shaRe.test(currentValue)) {
         dep.currentValue = tag;
@@ -95,9 +110,6 @@ function extractWithRegex(content: string): PackageDependency[] {
         dep.currentDigestShort = currentValue;
       } else {
         dep.currentValue = currentValue;
-        if (!dockerVersioning.api.isValid(currentValue)) {
-          dep.skipReason = 'invalid-version';
-        }
       }
       deps.push(dep);
     }
@@ -105,17 +117,38 @@ function extractWithRegex(content: string): PackageDependency[] {
   return deps;
 }
 
-function extractContainer(container: unknown): PackageDependency | undefined {
+function detectDatasource(registryUrl: string): PackageDependency {
+  const platform = detectPlatform(registryUrl);
+
+  switch (platform) {
+    case 'github':
+      return { registryUrls: [registryUrl] };
+    case 'gitea':
+      return {
+        registryUrls: [registryUrl],
+        datasource: GiteaTagsDatasource.id,
+      };
+  }
+
+  return {
+    skipReason: 'unsupported-url',
+  };
+}
+
+function extractContainer(
+  container: unknown,
+  registryAliases: Record<string, string> | undefined,
+): PackageDependency | undefined {
   if (is.string(container)) {
-    return getDep(container);
+    return getDep(container, true, registryAliases);
   } else if (is.plainObject(container) && is.string(container.image)) {
-    return getDep(container.image);
+    return getDep(container.image, true, registryAliases);
   }
   return undefined;
 }
 
 const runnerVersionRegex = regEx(
-  /^\s*(?<depName>[a-zA-Z]+)-(?<currentValue>[^\s]+)/
+  /^\s*(?<depName>[a-zA-Z]+)-(?<currentValue>[^\s]+)/,
 );
 
 function extractRunner(runner: string): PackageDependency | null {
@@ -159,31 +192,33 @@ function extractRunners(runner: unknown): PackageDependency[] {
 
 function extractWithYAMLParser(
   content: string,
-  packageFile: string
+  packageFile: string,
+  config: ExtractConfig,
 ): PackageDependency[] {
   logger.trace('github-actions.extractWithYAMLParser()');
   const deps: PackageDependency[] = [];
 
   let pkg: Workflow;
   try {
-    pkg = load(content, { json: true }) as Workflow;
+    // TODO: use schema (#9610)
+    pkg = parseSingleYaml(content);
   } catch (err) {
     logger.debug(
       { packageFile, err },
-      'Failed to parse GitHub Actions Workflow YAML'
+      'Failed to parse GitHub Actions Workflow YAML',
     );
     return [];
   }
 
   for (const job of Object.values(pkg?.jobs ?? {})) {
-    const dep = extractContainer(job?.container);
+    const dep = extractContainer(job?.container, config.registryAliases);
     if (dep) {
       dep.depType = 'container';
       deps.push(dep);
     }
 
     for (const service of Object.values(job?.services ?? {})) {
-      const dep = extractContainer(service);
+      const dep = extractContainer(service, config.registryAliases);
       if (dep) {
         dep.depType = 'service';
         deps.push(dep);
@@ -198,12 +233,13 @@ function extractWithYAMLParser(
 
 export function extractPackageFile(
   content: string,
-  packageFile: string
+  packageFile: string,
+  config: ExtractConfig = {}, // TODO: enforce ExtractConfig
 ): PackageFileContent | null {
   logger.trace(`github-actions.extractPackageFile(${packageFile})`);
   const deps = [
-    ...extractWithRegex(content),
-    ...extractWithYAMLParser(content, packageFile),
+    ...extractWithRegex(content, config),
+    ...extractWithYAMLParser(content, packageFile, config),
   ];
   if (!deps.length) {
     return null;

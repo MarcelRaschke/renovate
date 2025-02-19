@@ -1,4 +1,5 @@
-import { DateTime, DurationLikeObject } from 'luxon';
+import type { DurationLikeObject } from 'luxon';
+import { DateTime } from 'luxon';
 
 export function prepareQuery(payloadQuery: string): string {
   return `
@@ -18,7 +19,7 @@ export function prepareQuery(payloadQuery: string): string {
 export function isDateExpired(
   currentTime: DateTime,
   initialTimestamp: string,
-  duration: DurationLikeObject
+  duration: DurationLikeObject,
 ): boolean {
   const expiryTime = DateTime.fromISO(initialTimestamp).plus(duration).toUTC();
   return currentTime >= expiryTime;

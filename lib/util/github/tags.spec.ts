@@ -1,3 +1,4 @@
+import type { Timestamp } from '../../util/timestamp';
 import { GithubHttp } from '../http/github';
 import * as githubGraphql from './graphql';
 import { findCommitOfTag } from './tags';
@@ -12,13 +13,13 @@ describe('util/github/tags', () => {
         {
           version: 'v1.0.0',
           gitRef: 'v1.0.0',
-          releaseTimestamp: '2021-01-01',
+          releaseTimestamp: '2021-01-01' as Timestamp,
           hash: '123',
         },
         {
           version: 'v2.0.0',
           gitRef: 'v2.0.0',
-          releaseTimestamp: '2022-01-01',
+          releaseTimestamp: '2022-01-01' as Timestamp,
           hash: 'abc',
         },
       ]);
@@ -27,7 +28,7 @@ describe('util/github/tags', () => {
         undefined,
         'some-org/repo',
         'v2.0.0',
-        http
+        http,
       );
       expect(commit).toBe('abc');
     });
@@ -39,7 +40,7 @@ describe('util/github/tags', () => {
         'https://my-enterprise-github.dev',
         'some-org/repo',
         'v2.0.0',
-        http
+        http,
       );
       expect(commit).toBeNull();
       expect(githubGraphql.queryTags).toHaveBeenCalledWith(
@@ -47,7 +48,7 @@ describe('util/github/tags', () => {
           packageName: 'some-org/repo',
           registryUrl: 'https://my-enterprise-github.dev',
         },
-        http
+        http,
       );
     });
 
@@ -58,7 +59,7 @@ describe('util/github/tags', () => {
         undefined,
         'some-org/repo',
         'v2.0.0',
-        http
+        http,
       );
       expect(commit).toBeNull();
     });
@@ -70,7 +71,7 @@ describe('util/github/tags', () => {
         undefined,
         'some-org/repo',
         'v2.0.0',
-        http
+        http,
       );
       expect(commit).toBeNull();
     });

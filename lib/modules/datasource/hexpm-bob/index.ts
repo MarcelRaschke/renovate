@@ -3,6 +3,7 @@ import { logger } from '../../../logger';
 import { ExternalHostError } from '../../../types/errors/external-host-error';
 import { cache } from '../../../util/cache/package/decorator';
 import { HttpError } from '../../../util/http';
+import { asTimestamp } from '../../../util/timestamp';
 import { id as semverId } from '../../versioning/semver';
 import { Datasource } from '../datasource';
 import type { GetReleasesConfig, ReleaseResult } from '../types';
@@ -24,6 +25,13 @@ export class HexpmBobDatasource extends Datasource {
 
   override readonly defaultVersioning = semverId;
 
+  override readonly releaseTimestampSupport = true;
+  override readonly releaseTimestampNote =
+    'The release timestamp is determined from the `buildDate` field in the results.';
+  override readonly sourceUrlSupport = 'package';
+  override readonly sourceUrlNote =
+    'We use the URL https://github.com/elixir-lang/elixir.git for the `elixir` package and the https://github.com/erlang/otp.git URL for the `erlang` package.';
+
   @cache({
     namespace: `datasource-${datasource}`,
     key: ({ registryUrl, packageName }: GetReleasesConfig) =>
@@ -41,7 +49,7 @@ export class HexpmBobDatasource extends Datasource {
 
     logger.trace(
       { registryUrl, packageName },
-      `fetching hex.pm bob ${packageName} release`
+      `fetching hex.pm bob ${packageName} release`,
     );
 
     const url = `${registryUrl!}/builds/${packageName}/builds.txt`;
@@ -62,7 +70,7 @@ export class HexpmBobDatasource extends Datasource {
           return {
             gitRef,
             isStable: HexpmBobDatasource.isStable(version, packageType),
-            releaseTimestamp: buildDate,
+            releaseTimestamp: asTimestamp(buildDate),
             version: HexpmBobDatasource.cleanVersion(version, packageType),
           };
         });
@@ -88,7 +96,7 @@ export class HexpmBobDatasource extends Datasource {
 
   private static cleanVersion(
     version: string,
-    packageType: PackageType
+    packageType: PackageType,
   ): string {
     switch (packageType) {
       case 'elixir':
@@ -108,7 +116,7 @@ export class HexpmBobDatasource extends Datasource {
   }
 
   private static getPackageDetails(
-    packageType: PackageType
+    packageType: PackageType,
   ): Omit<ReleaseResult, 'releases'> {
     switch (packageType) {
       case 'elixir':

@@ -1,7 +1,6 @@
 import { GlobalConfig } from '../../../config/global';
 import type { RepoGlobalConfig } from '../../../config/types';
 import { GitTagsDatasource } from '../../datasource/git-tags';
-import { id as dockerVersioning } from '../../versioning/docker';
 import { id as semverVersioning } from '../../versioning/semver';
 import { getDep } from '../dockerfile/extract';
 import type { ExtractConfig, PackageDependency } from '../types';
@@ -10,10 +9,7 @@ import { extractAllPackageFiles } from '.';
 const fixturesDir = 'lib/modules/manager/batect/__fixtures__';
 
 function createDockerDependency(tag: string): PackageDependency {
-  return {
-    ...getDep(tag),
-    versioning: dockerVersioning,
-  };
+  return getDep(tag);
 }
 
 function createGitDependency(repo: string, version: string): PackageDependency {
@@ -46,7 +42,7 @@ describe('modules/manager/batect/extract', () => {
       expect(
         await extractAllPackageFiles(config, [
           `${fixturesDir}/empty/batect.yml`,
-        ])
+        ]),
       ).toEqual([]);
     });
 
@@ -54,7 +50,7 @@ describe('modules/manager/batect/extract', () => {
       expect(
         await extractAllPackageFiles(config, [
           `${fixturesDir}/invalid/batect.yml`,
-        ])
+        ]),
       ).toEqual([]);
     });
 
@@ -78,7 +74,7 @@ describe('modules/manager/batect/extract', () => {
 
       // TODO: #22198
       expect(
-        result?.sort((a, b) => a.packageFile.localeCompare(b.packageFile))
+        result?.sort((a, b) => a.packageFile.localeCompare(b.packageFile)),
       ).toEqual([
         {
           packageFile: `${fixturesDir}/valid/another-include.yml`,
@@ -86,7 +82,7 @@ describe('modules/manager/batect/extract', () => {
             createDockerDependency('ubuntu:19.10'),
             createGitDependency(
               'https://another-include.com/my-repo.git',
-              '4.5.6'
+              '4.5.6',
             ),
           ],
         },
@@ -97,12 +93,12 @@ describe('modules/manager/batect/extract', () => {
             createDockerDependency('alpine:1.2.3'),
             createDockerDependency('ubuntu:20.04'),
             createDockerDependency(
-              'postgres:9.6.20@sha256:166179811e4c75f8a092367afed6091208c8ecf60b111c7e49f29af45ca05e08'
+              'postgres:9.6.20@sha256:166179811e4c75f8a092367afed6091208c8ecf60b111c7e49f29af45ca05e08',
             ),
             createGitDependency('https://includes.com/my-repo.git', '1.2.3'),
             createGitDependency(
               'https://includes.com/my-other-repo.git',
-              '4.5.6'
+              '4.5.6',
             ),
           ],
         },

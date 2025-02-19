@@ -12,6 +12,7 @@ export const supportedRangeStrategies: RangeStrategy[] = [
   'widen',
   'pin',
   'replace',
+  'update-lockfile',
 ];
 
 function hex2npm(input: string): string {
@@ -30,7 +31,7 @@ function npm2hex(input: string): string {
     .map((str) => str.trim())
     .filter((str) => str !== '');
   let output = '';
-  const operators = ['^', '=', '>', '<', '<=', '>=', '~'];
+  const operators = ['^', '=', '>', '<', '<=', '>=', '~>'];
   for (let i = 0; i < res.length; i += 1) {
     if (i === res.length - 1) {
       output += res[i];
@@ -59,14 +60,14 @@ const matches = (version: string, range: string): boolean =>
 
 function getSatisfyingVersion(
   versions: string[],
-  range: string
+  range: string,
 ): string | null {
   return npm.getSatisfyingVersion(versions.map(hex2npm), hex2npm(range));
 }
 
 function minSatisfyingVersion(
   versions: string[],
-  range: string
+  range: string,
 ): string | null {
   return npm.minSatisfyingVersion(versions.map(hex2npm), hex2npm(range));
 }
@@ -89,12 +90,12 @@ function getNewValue({
     if (regEx(/~>\s*(\d+\.\d+\.\d+)$/).test(currentValue)) {
       newSemver = newSemver.replace(
         regEx(/[\^~]\s*(\d+\.\d+\.\d+)/),
-        (_str, p1: string) => `~> ${p1}`
+        (_str, p1: string) => `~> ${p1}`,
       );
     } else if (regEx(/~>\s*(\d+\.\d+)$/).test(currentValue)) {
       newSemver = newSemver.replace(
         regEx(/\^\s*(\d+\.\d+)(\.\d+)?/),
-        (_str, p1: string) => `~> ${p1}`
+        (_str, p1: string) => `~> ${p1}`,
       );
     } else {
       newSemver = newSemver.replace(regEx(/~\s*(\d+\.\d+\.\d)/), '~> $1');

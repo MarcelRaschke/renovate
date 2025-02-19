@@ -4,15 +4,11 @@ import type { Ctx } from '../types';
 import {
   cleanupTempVars,
   qStringValue,
-  qValueMatcher,
+  qVersion,
   storeInTokenMap,
   storeVarToken,
 } from './common';
 import { handlePlugin } from './handlers';
-
-const qVersion = qValueMatcher.handler((ctx) =>
-  storeInTokenMap(ctx, 'version')
-);
 
 export const qPlugins = q
   .sym(regEx(/^(?:id|kotlin)$/), storeVarToken)
@@ -46,8 +42,8 @@ export const qPlugins = q
             startsWith: '(',
             endsWith: ')',
             search: q.begin<Ctx>().join(qVersion).end(),
-          })
-      )
+          }),
+      ),
   )
   .handler(handlePlugin)
   .handler(cleanupTempVars);

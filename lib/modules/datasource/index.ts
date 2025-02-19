@@ -1,5 +1,6 @@
 import is from '@sindresorhus/is';
 import { dequal } from 'dequal';
+import { GlobalConfig } from '../../config/global';
 import { HOST_DISABLED } from '../../constants/error-messages';
 import { logger } from '../../logger';
 import { ExternalHostError } from '../../types/errors/external-host-error';
@@ -7,12 +8,15 @@ import { coerceArray } from '../../util/array';
 import * as memCache from '../../util/cache/memory';
 import * as packageCache from '../../util/cache/package';
 import { clone } from '../../util/clone';
+import { filterMap } from '../../util/filter-map';
 import { AsyncResult, Result } from '../../util/result';
+import { DatasourceCacheStats } from '../../util/stats';
 import { trimTrailingSlash } from '../../util/url';
 import datasources from './api';
 import {
   applyConstraintsFiltering,
   applyExtractVersion,
+  applyVersionCompatibility,
   filterValidVersions,
   getDatasourceFor,
   sortAndRemoveDuplicates,
@@ -49,7 +53,7 @@ function logError(datasource: string, packageName: string, err: any): void {
   } else if (errCode) {
     logger.debug(
       { datasource, packageName, url, errCode },
-      'Datasource connection error'
+      'Datasource connection error',
     );
   } else {
     logger.debug({ datasource, packageName, err }, 'Datasource unknown error');
@@ -59,37 +63,53 @@ function logError(datasource: string, packageName: string, err: any): void {
 async function getRegistryReleases(
   datasource: DatasourceApi,
   config: GetReleasesConfig,
-  registryUrl: string
+  registryUrl: string,
 ): Promise<ReleaseResult | null> {
   const cacheKey = `${datasource.id} ${registryUrl} ${config.packageName}`;
   if (datasource.caching) {
     const cachedResult = await packageCache.get<ReleaseResult>(
       cacheNamespace,
-      cacheKey
+      cacheKey,
     );
+
     // istanbul ignore if
     if (cachedResult) {
       logger.trace({ cacheKey }, 'Returning cached datasource response');
+      DatasourceCacheStats.hit(datasource.id, registryUrl, config.packageName);
       return cachedResult;
     }
+
+    DatasourceCacheStats.miss(datasource.id, registryUrl, config.packageName);
   }
+
   const res = await datasource.getReleases({ ...config, registryUrl });
   if (res?.releases.length) {
     res.registryUrl ??= registryUrl;
   }
+
   // cache non-null responses unless marked as private
-  if (datasource.caching && res && !res.isPrivate) {
-    logger.trace({ cacheKey }, 'Caching datasource response');
-    const cacheMinutes = 15;
-    await packageCache.set(cacheNamespace, cacheKey, res, cacheMinutes);
+  if (datasource.caching && res) {
+    const cachePrivatePackages = GlobalConfig.get(
+      'cachePrivatePackages',
+      false,
+    );
+    if (cachePrivatePackages || !res.isPrivate) {
+      logger.trace({ cacheKey }, 'Caching datasource response');
+      const cacheMinutes = 15;
+      await packageCache.set(cacheNamespace, cacheKey, res, cacheMinutes);
+      DatasourceCacheStats.set(datasource.id, registryUrl, config.packageName);
+    } else {
+      DatasourceCacheStats.skip(datasource.id, registryUrl, config.packageName);
+    }
   }
+
   return res;
 }
 
 function firstRegistry(
   config: GetReleasesInternalConfig,
   datasource: DatasourceApi,
-  registryUrls: string[]
+  registryUrls: string[],
 ): Promise<ReleaseResult | null> {
   if (registryUrls.length > 1) {
     logger.warn(
@@ -98,7 +118,7 @@ function firstRegistry(
         packageName: config.packageName,
         registryUrls,
       },
-      'Excess registryUrls found for datasource lookup - using first configured only'
+      'Excess registryUrls found for datasource lookup - using first configured only',
     );
   }
   const registryUrl = registryUrls[0];
@@ -108,7 +128,7 @@ function firstRegistry(
 async function huntRegistries(
   config: GetReleasesInternalConfig,
   datasource: DatasourceApi,
-  registryUrls: string[]
+  registryUrls: string[],
 ): Promise<ReleaseResult | null> {
   let res: ReleaseResult | null = null;
   let caughtError: Error | undefined;
@@ -139,56 +159,66 @@ async function huntRegistries(
 async function mergeRegistries(
   config: GetReleasesInternalConfig,
   datasource: DatasourceApi,
-  registryUrls: string[]
+  registryUrls: string[],
 ): Promise<ReleaseResult | null> {
   let combinedRes: ReleaseResult | undefined;
-  let caughtError: Error | undefined;
+  let lastErr: Error | undefined;
+  let commonRegistryUrl = true;
   for (const registryUrl of registryUrls) {
     try {
       const res = await getRegistryReleases(datasource, config, registryUrl);
       if (!res) {
         continue;
       }
-      if (combinedRes) {
-        for (const existingRelease of coerceArray(combinedRes.releases)) {
-          existingRelease.registryUrl ??= combinedRes.registryUrl;
-        }
-        for (const additionalRelease of coerceArray(res.releases)) {
-          additionalRelease.registryUrl = res.registryUrl;
-        }
-        combinedRes = { ...res, ...combinedRes };
-        delete combinedRes.registryUrl;
-        combinedRes.releases = [...combinedRes.releases, ...res.releases];
-      } else {
+
+      if (!combinedRes) {
         combinedRes = res;
+        continue;
       }
+
+      if (commonRegistryUrl) {
+        for (const release of coerceArray(combinedRes.releases)) {
+          release.registryUrl ??= combinedRes.registryUrl;
+        }
+        commonRegistryUrl = false;
+      }
+
+      const releases = coerceArray(res.releases);
+      for (const release of releases) {
+        release.registryUrl ??= res.registryUrl;
+      }
+
+      combinedRes.releases.push(...releases);
+      combinedRes = { ...res, ...combinedRes };
+      delete combinedRes.registryUrl;
     } catch (err) {
       if (err instanceof ExternalHostError) {
         throw err;
       }
-      // We'll always save the last-thrown error
-      caughtError = err;
+
+      lastErr = err;
       logger.trace({ err }, 'datasource merge failure');
     }
   }
-  // De-duplicate releases
-  if (combinedRes?.releases?.length) {
-    const seenVersions = new Set<string>();
-    combinedRes.releases = combinedRes.releases.filter((release) => {
-      if (seenVersions.has(release.version)) {
-        return false;
-      }
-      seenVersions.add(release.version);
-      return true;
-    });
+
+  if (!combinedRes) {
+    if (lastErr) {
+      throw lastErr;
+    }
+
+    return null;
   }
-  if (combinedRes) {
-    return combinedRes;
-  }
-  if (caughtError) {
-    throw caughtError;
-  }
-  return null;
+
+  const seenVersions = new Set<string>();
+  combinedRes.releases = filterMap(combinedRes.releases, (release) => {
+    if (seenVersions.has(release.version)) {
+      return null;
+    }
+    seenVersions.add(release.version);
+    return release;
+  });
+
+  return combinedRes;
 }
 
 function massageRegistryUrls(registryUrls: string[]): string[] {
@@ -199,7 +229,7 @@ function resolveRegistryUrls(
   datasource: DatasourceApi,
   defaultRegistryUrls: string[] | undefined,
   registryUrls: string[] | undefined | null,
-  additionalRegistryUrls: string[] | undefined
+  additionalRegistryUrls: string[] | undefined,
 ): string[] {
   if (!datasource.customRegistrySupport) {
     if (
@@ -214,12 +244,12 @@ function resolveRegistryUrls(
           defaultRegistryUrls,
           additionalRegistryUrls,
         },
-        'Custom registries are not allowed for this datasource and will be ignored'
+        'Custom registries are not allowed for this datasource and will be ignored',
       );
     }
     return is.function_(datasource.defaultRegistryUrls)
       ? datasource.defaultRegistryUrls()
-      : datasource.defaultRegistryUrls ?? [];
+      : (datasource.defaultRegistryUrls ?? []);
   }
   const customUrls = registryUrls?.filter(Boolean);
   let resolvedUrls: string[] = [];
@@ -239,7 +269,7 @@ function resolveRegistryUrls(
 }
 
 function applyReplacements(
-  config: GetReleasesInternalConfig
+  config: GetReleasesInternalConfig,
 ): Pick<ReleaseResult, 'replacementName' | 'replacementVersion'> | undefined {
   if (config.replacementName && config.replacementVersion) {
     return {
@@ -251,13 +281,13 @@ function applyReplacements(
 }
 
 async function fetchReleases(
-  config: GetReleasesInternalConfig
+  config: GetReleasesInternalConfig,
 ): Promise<ReleaseResult | null> {
   const { datasource: datasourceName } = config;
   let { registryUrls } = config;
   // istanbul ignore if: need test
   if (!datasourceName || getDatasourceFor(datasourceName) === undefined) {
-    logger.warn('Unknown datasource: ' + datasourceName);
+    logger.warn({ datasource: datasourceName }, 'Unknown datasource');
     return null;
   }
   if (datasourceName === 'npm') {
@@ -278,7 +308,7 @@ async function fetchReleases(
     datasource,
     config.defaultRegistryUrls,
     registryUrls,
-    config.additionalRegistryUrls
+    config.additionalRegistryUrls,
   );
   let dep: ReleaseResult | null = null;
   const registryStrategy = datasource.registryStrategy ?? 'hunt';
@@ -312,11 +342,11 @@ async function fetchReleases(
 }
 
 function fetchCachedReleases(
-  config: GetReleasesInternalConfig
+  config: GetReleasesInternalConfig,
 ): Promise<ReleaseResult | null> {
   const { datasource, packageName, registryUrls } = config;
   const cacheKey = `${cacheNamespace}${datasource}${packageName}${String(
-    registryUrls
+    registryUrls,
   )}`;
   // By returning a Promise and reusing it, we should only fetch each package at most once
   const cachedResult = memCache.get<Promise<ReleaseResult | null>>(cacheKey);
@@ -330,7 +360,7 @@ function fetchCachedReleases(
 }
 
 export function getRawPkgReleases(
-  config: GetPkgReleasesConfig
+  config: GetPkgReleasesConfig,
 ): AsyncResult<
   ReleaseResult,
   Error | 'no-datasource' | 'no-package-name' | 'no-result'
@@ -359,10 +389,15 @@ export function getRawPkgReleases(
 
 export function applyDatasourceFilters(
   releaseResult: ReleaseResult,
-  config: GetPkgReleasesConfig
+  config: GetPkgReleasesConfig,
 ): ReleaseResult {
   let res = releaseResult;
   res = applyExtractVersion(res, config.extractVersion);
+  res = applyVersionCompatibility(
+    res,
+    config.versionCompatibility,
+    config.currentCompatibility,
+  );
   res = filterValidVersions(res, config);
   res = sortAndRemoveDuplicates(res, config);
   res = applyConstraintsFiltering(res, config);
@@ -370,7 +405,7 @@ export function applyDatasourceFilters(
 }
 
 export async function getPkgReleases(
-  config: GetPkgReleasesConfig
+  config: GetPkgReleasesConfig,
 ): Promise<ReleaseResult | null> {
   const { val = null, err } = await getRawPkgReleases(config)
     .transform((res) => applyDatasourceFilters(res, config))
@@ -390,22 +425,25 @@ export function supportsDigests(datasource: string | undefined): boolean {
 
 function getDigestConfig(
   datasource: DatasourceApi,
-  config: GetDigestInputConfig
+  config: GetDigestInputConfig,
 ): DigestConfig {
-  const { currentValue, currentDigest } = config;
+  const { lookupName, currentValue, currentDigest } = config;
   const packageName = config.replacementName ?? config.packageName;
-  const [registryUrl] = resolveRegistryUrls(
-    datasource,
-    config.defaultRegistryUrls,
-    config.registryUrls,
-    config.additionalRegistryUrls
-  );
-  return { packageName, registryUrl, currentValue, currentDigest };
+  // Prefer registryUrl from getReleases() lookup if it has been passed
+  const registryUrl =
+    config.registryUrl ??
+    resolveRegistryUrls(
+      datasource,
+      config.defaultRegistryUrls,
+      config.registryUrls,
+      config.additionalRegistryUrls,
+    )[0];
+  return { lookupName, packageName, registryUrl, currentValue, currentDigest };
 }
 
 export function getDigest(
   config: GetDigestInputConfig,
-  value?: string
+  value?: string,
 ): Promise<string | null> {
   const datasource = getDatasourceFor(config.datasource);
   // istanbul ignore if: need test
@@ -417,10 +455,10 @@ export function getDigest(
 }
 
 export function getDefaultConfig(
-  datasource: string
+  datasource: string,
 ): Promise<Record<string, unknown>> {
   const loadedDatasource = getDatasourceFor(datasource);
   return Promise.resolve<Record<string, unknown>>(
-    loadedDatasource?.defaultConfig ?? Object.create({})
+    loadedDatasource?.defaultConfig ?? Object.create({}),
   );
 }

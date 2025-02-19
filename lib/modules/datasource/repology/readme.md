@@ -1,5 +1,5 @@
 With [Repology](https://repology.org/) you can look up package versions from many package repositories.
-You can combine Repology with [regex managers](https://docs.renovatebot.com/modules/manager/regex/) to update dependencies which are not supported by Renovate.
+You can combine Repology with [regex managers](../../manager/regex/index.md) to update dependencies which are not supported by Renovate.
 
 The `packageName` field should be constructed using the repository identifier and the actual package name separated by a slash.
 For example: `alpine_3_12/gcc` would look for a binary (or source package) called `gcc` within the `alpine_3_12` repository.
@@ -14,12 +14,13 @@ For example, the `Alpine Linux 3.12` repository has this URL: `https://repology.
 Say you're using system packages in a Dockerfile and want to update them with Repology.
 With the Repology datasource you can "pin" each dependency, and get automatic updates.
 
-First you would set a generic regex manager in your `renovate.json` file for `Dockerfile`:
+First you would set a custom manager in your `renovate.json` file for `Dockerfile`:
 
 ```json
 {
-  "regexManagers": [
+  "customManagers": [
     {
+      "customType": "regex",
       "fileMatch": ["^Dockerfile$"],
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\\sENV .*?_VERSION=\"(?<currentValue>.*)\"\\s"
@@ -32,7 +33,7 @@ First you would set a generic regex manager in your `renovate.json` file for `Do
 
 Then you would put comments in your Dockerfile, to tell Renovate where to find the updates:
 
-```docker
+```dockerfile
 FROM alpine:3.12.0@sha256:a15790640a6690aa1730c38cf0a440e2aa44aaca9b0e8931a9f2b0d7cc90fd65
 
 # renovate: datasource=repology depName=alpine_3_12/gcc versioning=loose

@@ -3,6 +3,7 @@ import type { VersioningApi } from '../../../../modules/versioning/types';
 export interface BucketConfig {
   separateMajorMinor?: boolean;
   separateMultipleMajor?: boolean;
+  separateMultipleMinor?: boolean;
   separateMinorPatch?: boolean;
 }
 
@@ -10,15 +11,19 @@ export function getBucket(
   config: BucketConfig,
   currentVersion: string,
   newVersion: string,
-  versioning: VersioningApi
+  versioningApi: VersioningApi,
 ): string | null {
-  const { separateMajorMinor, separateMultipleMajor, separateMinorPatch } =
-    config;
+  const {
+    separateMajorMinor,
+    separateMultipleMajor,
+    separateMultipleMinor,
+    separateMinorPatch,
+  } = config;
   if (!separateMajorMinor) {
     return 'latest';
   }
-  const fromMajor = versioning.getMajor(currentVersion);
-  const toMajor = versioning.getMajor(newVersion);
+  const fromMajor = versioningApi.getMajor(currentVersion);
+  const toMajor = versioningApi.getMajor(newVersion);
 
   // istanbul ignore if: error case
   if (toMajor === null) {
@@ -36,8 +41,8 @@ export function getBucket(
 
   // If we reach here then we know it's non-major
 
-  const fromMinor = versioning.getMinor(currentVersion);
-  const toMinor = versioning.getMinor(newVersion);
+  const fromMinor = versioningApi.getMinor(currentVersion);
+  const toMinor = versioningApi.getMinor(newVersion);
 
   // istanbul ignore if: error case
   if (fromMinor === null || toMinor === null) {
@@ -46,11 +51,9 @@ export function getBucket(
 
   // Check the minor update type first
   if (fromMinor !== toMinor) {
-    /* future option
     if (separateMultipleMinor) {
       return `v${toMajor}.${toMinor}`;
     }
-    */
 
     if (separateMinorPatch) {
       return 'minor';
@@ -63,7 +66,7 @@ export function getBucket(
 
   /* future option
   if (separateMultiplePatch) {
-    const toPatch = versioning.getPatch(newVersion);
+    const toPatch = versioningApi.getPatch(newVersion);
     if (toPatch !== null && separateMultiplePatch) {
       return `v${toMajor}.${toMinor}.${toPatch}`;
     }

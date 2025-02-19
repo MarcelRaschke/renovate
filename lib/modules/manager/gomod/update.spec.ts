@@ -2,9 +2,9 @@ import { Fixtures } from '../../../../test/fixtures';
 import type { UpdateType } from '../../../config/types';
 import { updateDependency } from '.';
 
-const gomod1 = Fixtures.get('1/go.mod');
-const gomod2 = Fixtures.get('2/go.mod');
-const gomod3 = Fixtures.get('3/go.mod');
+const gomod1 = Fixtures.get('1/go-mod');
+const gomod2 = Fixtures.get('2/go-mod');
+const gomod3 = Fixtures.get('3/go-mod');
 
 describe('modules/manager/gomod/update', () => {
   describe('updateDependency', () => {
@@ -26,6 +26,18 @@ describe('modules/manager/gomod/update', () => {
         managerData: { lineNumber: 2 },
         newValue: '1.18',
         depType: 'golang',
+      };
+      const res = updateDependency({ fileContent: gomod3, upgrade });
+      expect(res).not.toEqual(gomod3);
+      expect(res).toContain(upgrade.newValue);
+    });
+
+    it('replaces go toolchain', () => {
+      const upgrade = {
+        depName: 'go',
+        managerData: { lineNumber: 134 },
+        newValue: '1.22.2',
+        depType: 'toolchain',
       };
       const res = updateDependency({ fileContent: gomod3, upgrade });
       expect(res).not.toEqual(gomod3);
@@ -129,7 +141,7 @@ describe('modules/manager/gomod/update', () => {
       const res = updateDependency({ fileContent: gomod1, upgrade });
       expect(res).not.toEqual(gomod1);
       expect(res).toContain(
-        'github.com/Azure/azure-sdk-for-go v26.0.0+incompatible'
+        'github.com/Azure/azure-sdk-for-go v26.0.0+incompatible',
       );
     });
 
@@ -272,7 +284,7 @@ describe('modules/manager/gomod/update', () => {
       expect(res).not.toEqual(gomod1);
       // Assert that the version still contains +incompatible tag.
       expect(res).toContain(
-        'github.com/Azure/azure-sdk-for-go v26.0.0+incompatible'
+        'github.com/Azure/azure-sdk-for-go v26.0.0+incompatible',
       );
     });
 
@@ -286,10 +298,10 @@ describe('modules/manager/gomod/update', () => {
       const res = updateDependency({ fileContent: gomod1, upgrade });
       expect(res).not.toEqual(gomod1);
       expect(res).not.toContain(
-        'github.com/Azure/azure-sdk-for-go v26.0.0+incompatible+incompatible'
+        'github.com/Azure/azure-sdk-for-go v26.0.0+incompatible+incompatible',
       );
       expect(res).toContain(
-        'github.com/Azure/azure-sdk-for-go v26.0.0+incompatible'
+        'github.com/Azure/azure-sdk-for-go v26.0.0+incompatible',
       );
     });
 
@@ -354,7 +366,7 @@ describe('modules/manager/gomod/update', () => {
 
     it('handles multiline replace update', () => {
       const fileContent = `
-      go 1.18
+      go 1.23
       replace (
         k8s.io/client-go => k8s.io/client-go v0.21.9
       )`;

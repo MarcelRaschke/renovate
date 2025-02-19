@@ -1,4 +1,5 @@
-import { lexer, parser, query as q } from 'good-enough-parser';
+import type { lexer, parser } from 'good-enough-parser';
+import { query as q } from 'good-enough-parser';
 import { clone } from '../../../../util/clone';
 import { regEx } from '../../../../util/regex';
 import type {
@@ -31,8 +32,17 @@ export const GRADLE_PLUGINS = {
   jacoco: ['toolVersion', 'org.jacoco:jacoco'],
   jmh: ['jmhVersion', 'org.openjdk.jmh:jmh-core'],
   lombok: ['version', 'org.projectlombok:lombok'],
+  micronaut: ['version', 'io.micronaut.platform:micronaut-platform'],
   pmd: ['toolVersion', 'net.sourceforge.pmd:pmd-java'],
   spotbugs: ['toolVersion', 'com.github.spotbugs:spotbugs'],
+};
+
+export const GRADLE_TEST_SUITES = {
+  useJunit: 'junit:junit',
+  useJUnitJupiter: 'org.junit.jupiter:junit-jupiter',
+  useKotlinTest: 'org.jetbrains.kotlin:kotlin-test-junit',
+  useSpock: 'org.spockframework:spock-core',
+  useTestNG: 'org.testng:testng',
 };
 
 export function storeVarToken(ctx: Ctx, node: lexer.Token): Ctx {
@@ -65,7 +75,7 @@ export function storeInTokenMap(ctx: Ctx, tokenMapKey: string): Ctx {
 
 export function loadFromTokenMap(
   ctx: Ctx,
-  tokenMapKey: string
+  tokenMapKey: string,
 ): NonEmptyArray<lexer.Token> {
   const tokens = ctx.tokenMap[tokenMapKey];
   if (!tokens) {
@@ -103,7 +113,7 @@ export function stripReservedPrefixFromKeyTokens(ctx: Ctx): Ctx {
 
 export function coalesceVariable(ctx: Ctx): Ctx {
   if (ctx.varTokens.length > 1) {
-    ctx.varTokens[0]!.value = ctx.varTokens
+    ctx.varTokens[0].value = ctx.varTokens
       .map((token) => token.value)
       .join('.');
     ctx.varTokens.length = 1;
@@ -112,10 +122,35 @@ export function coalesceVariable(ctx: Ctx): Ctx {
   return ctx;
 }
 
+export function findVariableInKotlinImport(
+  name: string,
+  ctx: Ctx,
+  variables: PackageVariables,
+): VariableData | undefined {
+  if (ctx.tmpKotlinImportStore.length && name.includes('.')) {
+    for (const tokens of ctx.tmpKotlinImportStore) {
+      const lastToken = tokens[tokens.length - 1];
+      if (lastToken && name.startsWith(`${lastToken.value}.`)) {
+        const prefix = tokens
+          .slice(0, -1)
+          .map((token) => token.value)
+          .join('.');
+        const identifier = `${prefix}.${name}`;
+
+        if (variables[identifier]) {
+          return variables[identifier];
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
 export function findVariable(
   name: string,
   ctx: Ctx,
-  variables: PackageVariables = ctx.globalVars
+  variables: PackageVariables = ctx.globalVars,
 ): VariableData | undefined {
   if (ctx.tmpNestingDepth.length) {
     const prefixParts = ctx.tmpNestingDepth.map((token) => token.value);
@@ -129,13 +164,17 @@ export function findVariable(
     }
   }
 
-  return variables[name];
+  if (variables[name]) {
+    return variables[name];
+  }
+
+  return findVariableInKotlinImport(name, ctx, variables);
 }
 
 export function interpolateString(
   childTokens: lexer.Token[],
   ctx: Ctx,
-  variables: PackageVariables = ctx.globalVars
+  variables: PackageVariables = ctx.globalVars,
 ): string | null {
   const resolvedSubstrings: string[] = [];
   for (const childToken of childTokens) {
@@ -183,10 +222,10 @@ export const qVariableAssignmentIdentifier = q
         startsWith: '[',
         endsWith: ']',
         search: q.begin<Ctx>().join(qStringValueAsSymbol).end(),
-      })
+      }),
     ),
     0,
-    32
+    32,
   )
   .handler(stripReservedPrefixFromKeyTokens);
 
@@ -201,7 +240,7 @@ export const qVariableAccessIdentifier = q
   .handler(coalesceVariable)
   .handler((ctx) => {
     ctx.varTokens = [
-      ...ctx.tmpTokenStore.backupVarAccessTokens!,
+      ...ctx.tmpTokenStore.backupVarAccessTokens,
       ...ctx.varTokens,
     ];
     delete ctx.tmpTokenStore.backupVarAccessTokens;
@@ -217,7 +256,7 @@ export const qPropertyAccessIdentifier = q
     q
       .sym<Ctx>(regEx(/^(?:extra|ext)$/))
       .op('.')
-      .sym('get')
+      .sym('get'),
   )
   .tree({
     maxDepth: 1,
@@ -236,23 +275,13 @@ export const qTemplateString = q
       ctx.tmpTokenStore.templateTokens = [];
       return ctx;
     },
-    search: q.alt(
-      qStringValue.handler((ctx) => {
+    search: q
+      .alt(qStringValue, qPropertyAccessIdentifier, qVariableAccessIdentifier)
+      .handler((ctx) => {
         ctx.tmpTokenStore.templateTokens?.push(...ctx.varTokens);
         ctx.varTokens = [];
         return ctx;
       }),
-      qPropertyAccessIdentifier.handler((ctx) => {
-        ctx.tmpTokenStore.templateTokens?.push(...ctx.varTokens);
-        ctx.varTokens = [];
-        return ctx;
-      }),
-      qVariableAccessIdentifier.handler((ctx) => {
-        ctx.tmpTokenStore.templateTokens?.push(...ctx.varTokens);
-        ctx.varTokens = [];
-        return ctx;
-      })
-    ),
   })
   .handler((ctx) => {
     ctx.varTokens = ctx.tmpTokenStore.templateTokens!;
@@ -269,5 +298,45 @@ export const qConcatExpr = (
 export const qValueMatcher = qConcatExpr(
   qTemplateString,
   qPropertyAccessIdentifier,
-  qVariableAccessIdentifier
+  qVariableAccessIdentifier,
+);
+
+// import foo.bar
+// runtimeOnly("some:foo:${bar.bazVersion}")
+export const qKotlinImport = q
+  .sym<Ctx>('import')
+  .join(qVariableAssignmentIdentifier)
+  .handler((ctx) => {
+    ctx.tmpKotlinImportStore.push(ctx.varTokens);
+    return ctx;
+  })
+  .handler(cleanupTempVars);
+
+// foo { bar { baz } }
+// foo.bar { baz }
+export const qDotOrBraceExpr = (
+  symValue: q.SymMatcherValue,
+  matcher: q.QueryBuilder<Ctx, parser.Node>,
+): q.QueryBuilder<Ctx, parser.Node> =>
+  q.sym<Ctx>(symValue).alt(
+    q.op<Ctx>('.').join(matcher),
+    q.tree({
+      type: 'wrapped-tree',
+      maxDepth: 1,
+      startsWith: '{',
+      endsWith: '}',
+      search: matcher,
+    }),
+  );
+
+export const qGroupId = qValueMatcher.handler((ctx) =>
+  storeInTokenMap(ctx, 'groupId'),
+);
+
+export const qArtifactId = qValueMatcher.handler((ctx) =>
+  storeInTokenMap(ctx, 'artifactId'),
+);
+
+export const qVersion = qValueMatcher.handler((ctx) =>
+  storeInTokenMap(ctx, 'version'),
 );

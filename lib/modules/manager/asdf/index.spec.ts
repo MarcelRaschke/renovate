@@ -1,4 +1,5 @@
-import { StaticTooling, upgradeableTooling } from './upgradeable-tooling';
+import type { StaticTooling } from './upgradeable-tooling';
+import { upgradeableTooling } from './upgradeable-tooling';
 import { extractPackageFile, supportedDatasources } from '.';
 
 describe('modules/manager/asdf/index', () => {
@@ -14,7 +15,7 @@ scala 3.0.0`)!.deps,
     ];
 
     const usedDatasources = new Set(
-      toolConfigs.map((config) => config.datasource!)
+      toolConfigs.map((config) => config.datasource!),
     );
 
     for (const datasource of usedDatasources) {

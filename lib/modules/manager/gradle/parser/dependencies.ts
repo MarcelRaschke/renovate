@@ -3,35 +3,28 @@ import { regEx } from '../../../../util/regex';
 import type { Ctx } from '../types';
 import {
   GRADLE_PLUGINS,
+  GRADLE_TEST_SUITES,
   cleanupTempVars,
+  qArtifactId,
+  qDotOrBraceExpr,
+  qGroupId,
   qTemplateString,
   qValueMatcher,
+  qVersion,
   storeInTokenMap,
   storeVarToken,
 } from './common';
 import {
   handleDepString,
-  handleImplicitGradlePlugin,
+  handleImplicitDep,
   handleKotlinShortNotationDep,
   handleLongFormDep,
 } from './handlers';
 
-const qGroupId = qValueMatcher.handler((ctx) =>
-  storeInTokenMap(ctx, 'groupId')
-);
-
-const qArtifactId = qValueMatcher.handler((ctx) =>
-  storeInTokenMap(ctx, 'artifactId')
-);
-
-const qVersion = qValueMatcher.handler((ctx) =>
-  storeInTokenMap(ctx, 'version')
-);
-
 // "foo:bar:1.2.3"
 // "foo:bar:$baz"
 // "foo" + "${bar}" + baz
-const qDependencyStrings = qTemplateString
+export const qDependencyStrings = qTemplateString
   .opt(q.op<Ctx>('+').join(qValueMatcher))
   .handler((ctx: Ctx) => storeInTokenMap(ctx, 'templateStringTokens'))
   .handler(handleDepString)
@@ -72,7 +65,7 @@ const qDependencySet = q
           startsWith: '(',
           endsWith: ')',
           search: q.begin<Ctx>().join(qArtifactId).end(),
-        })
+        }),
       )
       .handler(handleLongFormDep),
   })
@@ -140,7 +133,7 @@ const qKotlinMapNotationDependencies = q
 // someMethod("foo", "bar", "1.2.3")
 export const qLongFormDep = q
   .opt<Ctx>(
-    q.sym(storeVarToken).handler((ctx) => storeInTokenMap(ctx, 'methodName'))
+    q.sym(storeVarToken).handler((ctx) => storeInTokenMap(ctx, 'methodName')),
   )
   .tree({
     type: 'wrapped-tree',
@@ -163,10 +156,10 @@ export const qLongFormDep = q
 // pmd { toolVersion = "1.2.3" }
 const qImplicitGradlePlugin = q
   .alt(
-    ...Object.keys(GRADLE_PLUGINS).map((pluginName) =>
+    ...Object.keys(GRADLE_PLUGINS).map((implicitDepName) =>
       q
-        .sym<Ctx>(pluginName, storeVarToken)
-        .handler((ctx) => storeInTokenMap(ctx, 'pluginName'))
+        .sym<Ctx>(implicitDepName, storeVarToken)
+        .handler((ctx) => storeInTokenMap(ctx, 'implicitDepName'))
         .tree({
           type: 'wrapped-tree',
           maxDepth: 1,
@@ -175,7 +168,7 @@ const qImplicitGradlePlugin = q
           endsWith: '}',
           search: q
             .sym<Ctx>(
-              GRADLE_PLUGINS[pluginName as keyof typeof GRADLE_PLUGINS][0]
+              GRADLE_PLUGINS[implicitDepName as keyof typeof GRADLE_PLUGINS][0],
             )
             .alt(
               // toolVersion = "1.2.3"
@@ -189,12 +182,39 @@ const qImplicitGradlePlugin = q
                   startsWith: '(',
                   endsWith: ')',
                   search: q.begin<Ctx>().join(qVersion).end(),
-                })
+                }),
             ),
-        })
-    )
+        }),
+    ),
   )
-  .handler(handleImplicitGradlePlugin)
+  .handler(handleImplicitDep)
+  .handler(cleanupTempVars);
+
+// testing { suites { test { useSpock("1.2.3") } } }
+const qImplicitTestSuites = qDotOrBraceExpr(
+  'testing',
+  qDotOrBraceExpr(
+    'suites',
+    qDotOrBraceExpr(
+      'test',
+      q
+        .sym(
+          regEx(`^(?:${Object.keys(GRADLE_TEST_SUITES).join('|')})$`),
+          storeVarToken,
+        )
+        .handler((ctx) => storeInTokenMap(ctx, 'implicitDepName'))
+        .tree({
+          type: 'wrapped-tree',
+          maxDepth: 1,
+          maxMatches: 1,
+          startsWith: '(',
+          endsWith: ')',
+          search: q.begin<Ctx>().join(qVersion).end(),
+        }),
+    ),
+  ),
+)
+  .handler(handleImplicitDep)
   .handler(cleanupTempVars);
 
 export const qDependencies = q.alt(
@@ -203,5 +223,8 @@ export const qDependencies = q.alt(
   qGroovyMapNotationDependencies,
   qKotlinShortNotationDependencies,
   qKotlinMapNotationDependencies,
-  qImplicitGradlePlugin
+  qImplicitGradlePlugin,
+  qImplicitTestSuites,
+  // avoid heuristic matching of gradle feature variant capabilities
+  qDotOrBraceExpr('java', q.sym<Ctx>('registerFeature').tree()),
 );

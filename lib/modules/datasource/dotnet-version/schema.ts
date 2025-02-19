@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { LooseArray } from '../../../util/schema-utils';
+import { MaybeTimestamp } from '../../../util/timestamp';
 import type { Release } from '../types';
 
 export const ReleasesIndex = z
@@ -9,13 +10,13 @@ export const ReleasesIndex = z
         .object({
           'releases.json': z.string(),
         })
-        .transform(({ 'releases.json': releasesUrl }) => releasesUrl)
+        .transform(({ 'releases.json': releasesUrl }) => releasesUrl),
     ).catch([]),
   })
   .transform(({ 'releases-index': releasesIndex }) => releasesIndex);
 
 const ReleaseBase = z.object({
-  'release-date': z.string(),
+  'release-date': MaybeTimestamp,
   'release-notes': z.string(),
 });
 const ReleaseDetails = z.object({
@@ -26,18 +27,23 @@ export const DotnetSdkReleases = z
   .object({
     releases: LooseArray(
       ReleaseBase.extend({
-        sdk: ReleaseDetails,
-      })
+        sdks: z.array(ReleaseDetails),
+      }),
     ).catch([]),
   })
   .transform(({ releases }): Release[] =>
-    releases.map(
+    releases.flatMap(
       ({
-        sdk: { version },
+        sdks,
         'release-date': releaseTimestamp,
         'release-notes': changelogUrl,
-      }) => ({ version, releaseTimestamp, changelogUrl })
-    )
+      }) =>
+        sdks.map(({ version }) => ({
+          version,
+          releaseTimestamp,
+          changelogUrl,
+        })),
+    ),
   );
 
 export const DotnetRuntimeReleases = z
@@ -45,7 +51,7 @@ export const DotnetRuntimeReleases = z
     releases: LooseArray(
       ReleaseBase.extend({
         runtime: ReleaseDetails,
-      })
+      }),
     ).catch([]),
   })
   .transform(({ releases }): Release[] =>
@@ -54,6 +60,6 @@ export const DotnetRuntimeReleases = z
         runtime: { version },
         'release-date': releaseTimestamp,
         'release-notes': changelogUrl,
-      }) => ({ version, releaseTimestamp, changelogUrl })
-    )
+      }) => ({ version, releaseTimestamp, changelogUrl }),
+    ),
   );

@@ -3,6 +3,7 @@ import { ExternalHostError } from '../../../types/errors/external-host-error';
 import { cache } from '../../../util/cache/package/decorator';
 import { HttpError } from '../../../util/http';
 import { joinUrlParts } from '../../../util/url';
+import { id as bazelVersioningId } from '../../versioning/bazel-module';
 import { BzlmodVersion } from '../../versioning/bazel-module/bzlmod-version';
 import { Datasource } from '../datasource';
 import type { GetReleasesConfig, Release, ReleaseResult } from '../types';
@@ -15,8 +16,10 @@ export class BazelDatasource extends Datasource {
     'https://raw.githubusercontent.com/bazelbuild/bazel-central-registry/main';
 
   override readonly defaultRegistryUrls = [BazelDatasource.bazelCentralRepoUrl];
+  override readonly registryStrategy = 'hunt';
   override readonly customRegistrySupport = true;
   override readonly caching = true;
+  override readonly defaultVersioning = bazelVersioningId;
 
   static packageMetadataPath(packageName: string): string {
     return `/modules/${packageName}/metadata.json`;
@@ -42,18 +45,21 @@ export class BazelDatasource extends Datasource {
     try {
       const { body: metadata } = await this.http.getJson(
         url,
-        BazelModuleMetadata
+        BazelModuleMetadata,
       );
       result.releases = metadata.versions
         .map((v) => new BzlmodVersion(v))
         .sort(BzlmodVersion.defaultCompare)
         .map((bv) => {
           const release: Release = { version: bv.original };
-          if (is.truthy(metadata.yanked_versions[bv.original])) {
+          if (is.truthy(metadata.yanked_versions?.[bv.original])) {
             release.isDeprecated = true;
           }
           return release;
         });
+      if (metadata.homepage) {
+        result.homepage = metadata.homepage;
+      }
     } catch (err) {
       // istanbul ignore else: not testable with nock
       if (err instanceof HttpError) {

@@ -1,6 +1,9 @@
+import type { PackageCacheNamespace } from '../../cache/package/types';
+import type { Timestamp } from '../../timestamp';
+
 export interface GithubDatasourceItem {
   version: string;
-  releaseTimestamp: string;
+  releaseTimestamp: Timestamp;
 }
 
 /**
@@ -8,12 +11,12 @@ export interface GithubDatasourceItem {
  */
 export interface GithubGraphqlDatasourceAdapter<
   Input,
-  Output extends GithubDatasourceItem
+  Output extends GithubDatasourceItem,
 > {
   /**
    * Used for creating datasource-unique cache key
    */
-  key: string;
+  key: PackageCacheNamespace;
 
   /**
    * Used to define datasource-unique GraphQL query
@@ -88,15 +91,15 @@ export interface GithubGraphqlRepoParams {
 }
 
 export interface GithubGraphqlCacheRecord<
-  GithubItem extends GithubDatasourceItem
+  GithubItem extends GithubDatasourceItem,
 > {
   items: Record<string, GithubItem>;
   createdAt: string;
 }
 
 export interface GithubGraphqlCacheStrategy<
-  GithubItem extends GithubDatasourceItem
+  GithubItem extends GithubDatasourceItem,
 > {
   reconcile(items: GithubItem[]): Promise<boolean>;
-  finalize(): Promise<GithubItem[]>;
+  finalizeAndReturn(): Promise<GithubItem[]>;
 }

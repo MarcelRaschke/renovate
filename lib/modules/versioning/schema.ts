@@ -12,9 +12,8 @@ export const Versioning = z
 
     let versioning = versionings.get(versioningName);
     if (!versioning) {
-      logger.info(
-        { versioning: versioningSpec },
-        `Versioning: '${versioningSpec}' not found, falling back to ${defaultVersioning.id}`
+      logger.debug(
+        `Versioning: '${versioningSpec}' not found, falling back to ${defaultVersioning.id}`,
       );
       return defaultVersioning.api;
     }

@@ -1,19 +1,21 @@
+import is from '@sindresorhus/is';
 import type { PackageRule, PackageRuleInputConfig } from '../../config/types';
+import { matchRegexOrGlobList } from '../string-match';
 import { Matcher } from './base';
-import { anyMatchRegexOrMinimatch } from './match';
 
 export class RepositoriesMatcher extends Matcher {
   override matches(
     { repository }: PackageRuleInputConfig,
-    { matchRepositories }: PackageRule
+    { matchRepositories }: PackageRule,
   ): boolean | null {
-    return anyMatchRegexOrMinimatch(matchRepositories, repository);
-  }
+    if (is.undefined(matchRepositories)) {
+      return null;
+    }
 
-  override excludes(
-    { repository }: PackageRuleInputConfig,
-    { excludeRepositories }: PackageRule
-  ): boolean | null {
-    return anyMatchRegexOrMinimatch(excludeRepositories, repository);
+    if (is.undefined(repository)) {
+      return false;
+    }
+
+    return matchRegexOrGlobList(repository, matchRepositories);
   }
 }

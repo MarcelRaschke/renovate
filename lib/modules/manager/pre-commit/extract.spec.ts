@@ -1,31 +1,29 @@
+import { mockDeep } from 'jest-mock-extended';
 import { Fixtures } from '../../../../test/fixtures';
 import { mocked } from '../../../../test/util';
 import * as _hostRules from '../../../util/host-rules';
+import { PypiDatasource } from '../../datasource/pypi';
 import { extractPackageFile } from '.';
 
-jest.mock('../../../util/host-rules');
+jest.mock('../../../util/host-rules', () => mockDeep());
 const hostRules = mocked(_hostRules);
 const filename = '.pre-commit.yaml';
 
 const complexPrecommitConfig = Fixtures.get('complex.pre-commit-config.yaml');
 const examplePrecommitConfig = Fixtures.get('.pre-commit-config.yaml');
 const emptyReposPrecommitConfig = Fixtures.get(
-  'empty_repos.pre-commit-config.yaml'
+  'empty_repos.pre-commit-config.yaml',
 );
 const noReposPrecommitConfig = Fixtures.get('no_repos.pre-commit-config.yaml');
 const invalidRepoPrecommitConfig = Fixtures.get(
-  'invalid_repo.pre-commit-config.yaml'
+  'invalid_repo.pre-commit-config.yaml',
 );
 const enterpriseGitPrecommitConfig = Fixtures.get(
-  'enterprise.pre-commit-config.yaml'
+  'enterprise.pre-commit-config.yaml',
 );
 
 describe('modules/manager/pre-commit/extract', () => {
   describe('extractPackageFile()', () => {
-    beforeEach(() => {
-      jest.resetAllMocks();
-    });
-
     it('returns null for invalid yaml file content', () => {
       const result = extractPackageFile('nothing here: [', filename);
       expect(result).toBeNull();
@@ -84,11 +82,30 @@ describe('modules/manager/pre-commit/extract', () => {
       expect(result).toMatchSnapshot({
         deps: [
           { depName: 'pre-commit/pre-commit-hooks', currentValue: 'v3.3.0' },
+          {
+            currentValue: '==1.1.1',
+            currentVersion: '1.1.1',
+            datasource: PypiDatasource.id,
+            depName: 'request',
+            depType: 'pre-commit-python',
+            packageName: 'request',
+          },
           { depName: 'psf/black', currentValue: '19.3b0' },
           { depName: 'psf/black', currentValue: '19.3b0' },
           { depName: 'psf/black', currentValue: '19.3b0' },
+          {
+            depName: 'my/dep',
+            currentValue: 'v42.0',
+            registryUrls: ['https://gitlab.mycompany.com'],
+          },
+          {
+            depName: 'my/dep',
+            currentValue: 'v42.0',
+            registryUrls: ['https://gitlab.mycompany.com'],
+          },
           { depName: 'prettier/pre-commit', currentValue: 'v2.1.2' },
           { depName: 'prettier/pre-commit', currentValue: 'v2.1.2' },
+          { depName: 'pre-commit/pre-commit-hooks', currentValue: 'v5.0.0' },
           { skipReason: 'invalid-url' },
         ],
       });

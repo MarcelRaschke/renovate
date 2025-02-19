@@ -27,6 +27,7 @@ describe('config/migrations/custom/host-rules-migration', () => {
           { hostName: 'some.domain.com', token: '123test' },
           { endpoint: 'domain.com/', token: '123test' },
           { host: 'some.domain.com', token: '123test' },
+          { matchHost: 'some.domain.com:8080', token: '123test' },
         ],
       } as any,
       {
@@ -58,8 +59,9 @@ describe('config/migrations/custom/host-rules-migration', () => {
           { matchHost: 'some.domain.com', token: '123test' },
           { matchHost: 'https://domain.com/', token: '123test' },
           { matchHost: 'some.domain.com', token: '123test' },
+          { matchHost: 'https://some.domain.com:8080', token: '123test' },
         ],
-      }
+      },
     );
   });
 
@@ -75,14 +77,14 @@ describe('config/migrations/custom/host-rules-migration', () => {
             },
           ],
         } as any,
-        {}
+        {},
       ).run([
         {
           matchHost: 'https://some-diff.domain.com',
           baseUrl: 'https://some.domain.com',
           token: '123test',
         },
-      ])
+      ]),
     ).toThrow(CONFIG_VALIDATION);
   });
 });

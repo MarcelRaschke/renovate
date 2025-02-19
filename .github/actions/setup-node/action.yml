@@ -29,12 +29,12 @@ runs:
         }}-${{
           inputs.node-version
         }}-${{
-          hashFiles('pnpm-lock.yaml')
+          hashFiles('pnpm-lock.yaml', 'package.json')
         }}' >> "$GITHUB_ENV"
 
     - name: Restore `node_modules`
       id: node-modules-restore
-      uses: actions/cache/restore@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
+      uses: actions/cache/restore@0c907a75c2c80ebcb7f088228285e798b750cf8f # v4.2.1
       with:
         path: node_modules
         key: ${{ env.CACHE_KEY }}
@@ -47,27 +47,47 @@ runs:
           (steps.node-modules-restore.outputs.cache-hit == 'true') && 'true' || ''
         }}' >> "$GITHUB_ENV"
 
-    - name: Enable corepack
-      shell: bash
-      run: corepack enable
+    - name: Setup pnpm
+      uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      with:
+        standalone: true
 
     - name: Setup Node
-      uses: actions/setup-node@5e21ff4d9bc1a8cf6de233a3057d20ec6b3fb69d # v3.8.1
+      uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
       with:
         node-version: ${{ inputs.node-version }}
-        cache: ${{ env.CACHE_HIT != 'true' && 'pnpm' || '' }}
+
+    - name: Calculate `PNPM_STORE`
+      shell: bash
+      run: |
+        echo "PNPM_STORE=$(pnpm store path)" >> "$GITHUB_ENV"
+
+    - name: Cache and restore `pnpm store`
+      if: env.CACHE_HIT != 'true'
+      uses: actions/cache@0c907a75c2c80ebcb7f088228285e798b750cf8f # v4.2.1
+      with:
+        path: ${{ env.PNPM_STORE }}
+        key: |
+          pnpm_store-${{
+          inputs.os
+          }}-${{
+            inputs.node-version
+          }}-${{
+            hashFiles('pnpm-lock.yaml', 'package.json')
+          }}
+        enableCrossOsArchive: true
 
     - name: Install dependencies
-      uses: nick-fields/retry@943e742917ac94714d2f408a0e8320f2d1fcafcd # v2.8.3
+      uses: nick-fields/retry@c97818ca39074beaea45180dba704f92496a0082 # v3.0.1
       if: env.CACHE_HIT != 'true'
       with:
         timeout_minutes: 10
         max_attempts: 3
-        command: pnpm install
+        command: pnpm install --frozen-lockfile
 
     - name: Write `node_modules` cache
       if: inputs.save-cache == 'true' && env.CACHE_HIT != 'true'
-      uses: actions/cache/save@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
+      uses: actions/cache/save@0c907a75c2c80ebcb7f088228285e798b750cf8f # v4.2.1
       with:
         path: node_modules
         key: ${{ env.CACHE_KEY }}

@@ -3,11 +3,11 @@ import type { TerraformDefinitionFile } from './types';
 
 export async function parseHCL(
   content: string,
-  fileName: string
+  fileName: string,
 ): Promise<TerraformDefinitionFile | null> {
   try {
     return await parse(fileName, content);
-  } catch (err) /* istanbul ignore next */ {
+  } catch /* istanbul ignore next */ {
     return null;
   }
 }

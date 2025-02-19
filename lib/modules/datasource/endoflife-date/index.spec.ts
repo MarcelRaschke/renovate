@@ -4,9 +4,9 @@ import { Fixtures } from '../../../../test/fixtures';
 import * as httpMock from '../../../../test/http-mock';
 import { EXTERNAL_HOST_ERROR } from '../../../constants/error-messages';
 import { registryUrl } from './common';
-import { EndoflifeDatePackagesource } from './index';
+import { EndoflifeDateDatasource } from './index';
 
-const datasource = EndoflifeDatePackagesource.id;
+const datasource = EndoflifeDateDatasource.id;
 
 // Default package name and mock path to test with
 const packageName = 'amazon-eks';
@@ -81,7 +81,7 @@ describe('modules/datasource/endoflife-date/index', () => {
     });
 
     it('returns null without registryUrl', async () => {
-      const endoflifeDateDatasource = new EndoflifeDatePackagesource();
+      const endoflifeDateDatasource = new EndoflifeDateDatasource();
       const res = await endoflifeDateDatasource.getReleases({
         registryUrl: '',
         packageName,
@@ -95,7 +95,7 @@ describe('modules/datasource/endoflife-date/index', () => {
         await getPkgReleases({
           datasource,
           packageName,
-        })
+        }),
       ).toBeNull();
     });
 
@@ -105,7 +105,7 @@ describe('modules/datasource/endoflife-date/index', () => {
         await getPkgReleases({
           datasource,
           packageName,
-        })
+        }),
       ).toBeNull();
     });
 
@@ -115,7 +115,7 @@ describe('modules/datasource/endoflife-date/index', () => {
         getPkgReleases({
           datasource,
           packageName,
-        })
+        }),
       ).rejects.toThrow(EXTERNAL_HOST_ERROR);
     });
 

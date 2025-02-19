@@ -1,5 +1,6 @@
 import type { RangeStrategy } from '../../../types/versioning';
 import { regEx } from '../../../util/regex';
+import mavenVersion from '../maven';
 import type { NewValueConfig, VersioningApi } from '../types';
 import {
   TokenType,
@@ -9,6 +10,7 @@ import {
   parse,
   parseMavenBasedRange,
   parsePrefixRange,
+  parseSingleVersionRange,
 } from './compare';
 
 export const id = 'gradle';
@@ -113,6 +115,12 @@ const matches = (a: string, b: string): boolean => {
     return equals(a, b);
   }
 
+  const singleVersionRange = parseSingleVersionRange(b);
+  if (singleVersionRange) {
+    const { val } = singleVersionRange;
+    return equals(a, val);
+  }
+
   const prefixRange = parsePrefixRange(b);
   if (prefixRange) {
     const tokens = prefixRange.tokens;
@@ -155,7 +163,7 @@ const matches = (a: string, b: string): boolean => {
 
 function getSatisfyingVersion(
   versions: string[],
-  range: string
+  range: string,
 ): string | null {
   return versions.reduce((result: string | null, version) => {
     if (matches(version, range)) {
@@ -172,7 +180,7 @@ function getSatisfyingVersion(
 
 function minSatisfyingVersion(
   versions: string[],
-  range: string
+  range: string,
 ): string | null {
   return versions.reduce((result: string | null, version) => {
     if (matches(version, range)) {
@@ -195,7 +203,29 @@ function getNewValue({
   if (isVersion(currentValue) || rangeStrategy === 'pin') {
     return newVersion;
   }
-  return null;
+
+  // Check if our version is of the form "1.2.+"
+  const prefixRange = parsePrefixRange(currentValue);
+  const parsedNewVersion = parse(newVersion);
+  if (prefixRange && parsedNewVersion) {
+    if (prefixRange.tokens.length > 0) {
+      if (prefixRange.tokens.length <= parsedNewVersion.length) {
+        const newPrefixed = prefixRange.tokens
+          .map((_, i) => parsedNewVersion[i].val)
+          .join('.');
+
+        return `${newPrefixed}.+`;
+      } else {
+        // our new version is shorter than our prefix range so drop our prefix range
+        return newVersion;
+      }
+    } else {
+      // our version is already "+" which includes ever version
+      return null;
+    }
+  }
+
+  return mavenVersion.getNewValue({ currentValue, rangeStrategy, newVersion });
 }
 
 export const api: VersioningApi = {

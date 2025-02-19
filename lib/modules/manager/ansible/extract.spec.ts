@@ -31,7 +31,7 @@ describe('modules/manager/ansible/extract', () => {
           registryAliases: {
             'quay.io': 'my-quay-mirror.registry.com',
           },
-        }
+        },
       );
       expect(res).toEqual({
         deps: [
@@ -41,9 +41,9 @@ describe('modules/manager/ansible/extract', () => {
             currentDigest: undefined,
             currentValue: '0.0.1',
             datasource: 'docker',
-            depName: 'my-quay-mirror.registry.com/redis',
+            depName: 'quay.io/redis',
+            packageName: 'my-quay-mirror.registry.com/redis',
             replaceString: 'quay.io/redis:0.0.1',
-            versioning: 'docker',
           },
         ],
       });
@@ -61,7 +61,7 @@ describe('modules/manager/ansible/extract', () => {
           registryAliases: {
             'index.docker.io': 'my-docker-mirror.registry.com',
           },
-        }
+        },
       );
       expect(res).toEqual({
         deps: [
@@ -72,8 +72,8 @@ describe('modules/manager/ansible/extract', () => {
             currentValue: '0.0.1',
             datasource: 'docker',
             depName: 'quay.io/redis',
+            packageName: 'quay.io/redis',
             replaceString: 'quay.io/redis:0.0.1',
-            versioning: 'docker',
           },
         ],
       });
@@ -92,7 +92,7 @@ describe('modules/manager/ansible/extract', () => {
             'quay.io': 'my-quay-mirror.registry.com',
             'my-quay-mirror.registry.com': 'quay.io',
           },
-        }
+        },
       );
       expect(res).toEqual({
         deps: [
@@ -102,9 +102,9 @@ describe('modules/manager/ansible/extract', () => {
             currentDigest: undefined,
             currentValue: '0.0.1',
             datasource: 'docker',
-            depName: 'my-quay-mirror.registry.com/redis',
+            depName: 'quay.io/redis',
+            packageName: 'my-quay-mirror.registry.com/redis',
             replaceString: 'quay.io/redis:0.0.1',
-            versioning: 'docker',
           },
         ],
       });

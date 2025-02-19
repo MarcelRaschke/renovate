@@ -1,12 +1,13 @@
 import is from '@sindresorhus/is';
 import fs from 'fs-extra';
-import { load } from 'js-yaml';
 import JSON5 from 'json5';
 import upath from 'upath';
-import { migrateConfig } from '../../../../config/migration';
 import type { AllConfig, RenovateConfig } from '../../../../config/types';
 import { logger } from '../../../../logger';
+import { parseJson } from '../../../../util/common';
 import { readSystemFile } from '../../../../util/fs';
+import { parseSingleYaml } from '../../../../util/yaml';
+import { migrateAndValidateConfig } from './util';
 
 export async function getParsedContent(file: string): Promise<RenovateConfig> {
   if (upath.basename(file) === '.renovaterc') {
@@ -15,14 +16,18 @@ export async function getParsedContent(file: string): Promise<RenovateConfig> {
   switch (upath.extname(file)) {
     case '.yaml':
     case '.yml':
-      return load(await readSystemFile(file, 'utf8'), {
-        json: true,
-      }) as RenovateConfig;
+      return parseSingleYaml(await readSystemFile(file, 'utf8'));
     case '.json5':
     case '.json':
-      return JSON5.parse(await readSystemFile(file, 'utf8'));
+      return parseJson(
+        await readSystemFile(file, 'utf8'),
+        file,
+      ) as RenovateConfig;
+    case '.cjs':
     case '.js': {
-      const tmpConfig = await import(file);
+      const tmpConfig = await import(
+        upath.isAbsolute(file) ? file : `${process.cwd()}/${file}`
+      );
       let config = tmpConfig.default
         ? tmpConfig.default
         : /* istanbul ignore next: hard to test */ tmpConfig;
@@ -38,15 +43,12 @@ export async function getParsedContent(file: string): Promise<RenovateConfig> {
 }
 
 export async function getConfig(env: NodeJS.ProcessEnv): Promise<AllConfig> {
-  let configFile = env.RENOVATE_CONFIG_FILE ?? 'config.js';
-  if (!upath.isAbsolute(configFile)) {
-    configFile = `${process.cwd()}/${configFile}`;
-  }
+  const configFile = env.RENOVATE_CONFIG_FILE ?? 'config.js';
 
   if (env.RENOVATE_CONFIG_FILE && !(await fs.pathExists(configFile))) {
     logger.fatal(
       { configFile },
-      `Custom config file specified in RENOVATE_CONFIG_FILE must exist`
+      `Custom config file specified in RENOVATE_CONFIG_FILE must exist`,
     );
     process.exit(1);
   }
@@ -57,39 +59,49 @@ export async function getConfig(env: NodeJS.ProcessEnv): Promise<AllConfig> {
     config = await getParsedContent(configFile);
   } catch (err) {
     if (err instanceof SyntaxError || err instanceof TypeError) {
-      logger.fatal(`Could not parse config file \n ${err.stack!}`);
+      logger.fatal({ error: err.stack }, 'Could not parse config file');
       process.exit(1);
     } else if (err instanceof ReferenceError) {
       logger.fatal(
-        `Error parsing config file due to unresolved variable(s): ${err.message}`
+        `Error parsing config file due to unresolved variable(s): ${err.message}`,
       );
       process.exit(1);
     } else if (err.message === 'Unsupported file type') {
       logger.fatal(err.message);
       process.exit(1);
     } else if (env.RENOVATE_CONFIG_FILE) {
-      logger.fatal('No custom config file found on disk');
+      logger.debug({ err }, 'Parse error');
+      logger.fatal('Error parsing config file');
       process.exit(1);
     }
     // istanbul ignore next: we can ignore this
     logger.debug('No config file found on disk - skipping');
   }
 
-  await deleteNonDefaultConfig(env); // Try deletion only if RENOVATE_CONFIG_FILE is specified
+  if (is.nonEmptyObject(config.processEnv)) {
+    const exportedKeys = [];
+    for (const [key, value] of Object.entries(config.processEnv)) {
+      if (!is.nonEmptyString(value)) {
+        logger.error({ key }, 'processEnv value is not a string.');
+        continue;
+      }
 
-  const { isMigrated, migratedConfig } = migrateConfig(config);
-  if (isMigrated) {
-    logger.warn(
-      { originalConfig: config, migratedConfig },
-      'Config needs migrating'
+      exportedKeys.push(key);
+      process.env[key] = value;
+    }
+    logger.debug(
+      { keys: exportedKeys },
+      'processEnv keys were exported to env',
     );
-    config = migratedConfig;
+    delete config.processEnv;
   }
-  return config;
+
+  return migrateAndValidateConfig(config, configFile);
 }
 
 export async function deleteNonDefaultConfig(
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
+  deleteConfigFile: boolean,
 ): Promise<void> {
   const configFile = env.RENOVATE_CONFIG_FILE;
 
@@ -97,7 +109,7 @@ export async function deleteNonDefaultConfig(
     return;
   }
 
-  if (env.RENOVATE_X_DELETE_CONFIG_FILE !== 'true') {
+  if (!deleteConfigFile) {
     return;
   }
 

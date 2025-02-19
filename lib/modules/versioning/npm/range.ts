@@ -57,6 +57,10 @@ function replaceCaretValue(oldValue: string, newValue: string): string {
   return needReplace ? resultTuple.join('.') : oldValue;
 }
 
+function stripV(value: string): string {
+  return value.replace(/^v/, '');
+}
+
 // TODO: #22198
 export function getNewValue({
   currentValue,
@@ -128,26 +132,21 @@ export function getNewValue({
   if (rangeStrategy === 'bump') {
     if (parsedRange.length === 1) {
       if (!element.operator) {
-        return getNewValue({
-          currentValue,
-          rangeStrategy: 'replace',
-          currentVersion,
-          newVersion,
-        });
+        return stripV(newVersion);
       }
       if (element.operator === '^') {
-        return `^${newVersion}`;
+        return `^${stripV(newVersion)}`;
       }
       if (element.operator === '~') {
-        return `~${newVersion}`;
+        return `~${stripV(newVersion)}`;
       }
       if (element.operator === '=') {
-        return `=${newVersion}`;
+        return `=${stripV(newVersion)}`;
       }
       if (element.operator === '>=') {
         return currentValue.includes('>= ')
-          ? `>= ${newVersion}`
-          : `>=${newVersion}`;
+          ? `>= ${stripV(newVersion)}`
+          : `>=${stripV(newVersion)}`;
       }
       if (element.operator.startsWith('<')) {
         return currentValue;
@@ -179,7 +178,7 @@ export function getNewValue({
         .join(' ');
     }
     logger.debug(
-      'Unsupported range type for rangeStrategy=bump: ' + currentValue
+      'Unsupported range type for rangeStrategy=bump: ' + currentValue,
     );
     return null;
   }
@@ -193,7 +192,7 @@ export function getNewValue({
     return `^${replaceCaretValue(currentVersion, newVersion)}`;
   }
   if (element.operator === '=') {
-    return `=${newVersion}`;
+    return `=${stripV(newVersion)}`;
   }
   if (element.operator === '~') {
     if (suffix.length) {
@@ -204,7 +203,7 @@ export function getNewValue({
   if (element.operator === '<=') {
     let res;
     if (!!element.patch || suffix.length) {
-      res = `<=${newVersion}`;
+      res = `<=${stripV(newVersion)}`;
     } else if (element.minor) {
       res = `<=${toVersionMajor}.${toVersionMinor}`;
     } else {

@@ -1,6 +1,8 @@
 import * as semver from 'semver';
-import { SemVer, parseRange } from 'semver-utils';
+import type { SemVer } from 'semver-utils';
+import { parseRange } from 'semver-utils';
 import { logger } from '../../../logger';
+import { coerceString } from '../../../util/string';
 import type { NewValueConfig } from '../types';
 import {
   cleanVersion,
@@ -43,8 +45,10 @@ export function getPatch(version: string): null | number {
 
   if (typeof cleanerVersion === 'string') {
     const newVersion = semver.valid(
-      semver.coerce(cleanedVersion, options),
-      options
+      semver.coerce(cleanedVersion, {
+        loose: false,
+      }),
+      options,
     );
     return Number(newVersion?.split('.')[2]);
   }
@@ -89,7 +93,7 @@ export function fixParsedRange(range: string): any {
         major,
       };
 
-      let full = `${operator ?? ''}${major}`;
+      let full = `${coerceString(operator)}${major}`;
       if (minor) {
         NewSemVer.minor = minor;
         full = `${full}.${minor}`;
@@ -211,7 +215,7 @@ export function replaceRange({
 
 export function widenRange(
   { currentValue, currentVersion, newVersion }: NewValueConfig,
-  options: semver.Options
+  options: semver.Options,
 ): string | null {
   const parsedRange = parseRange(currentValue);
   const element = parsedRange[parsedRange.length - 1];
@@ -247,7 +251,7 @@ export function widenRange(
 
 export function bumpRange(
   { currentValue, currentVersion, newVersion }: NewValueConfig,
-  options: semver.Options
+  options: semver.Options,
 ): string | null {
   if (!containsOperators(currentValue) && currentValue.includes('||')) {
     return widenRange(
@@ -257,7 +261,7 @@ export function bumpRange(
         currentVersion,
         newVersion,
       },
-      options
+      options,
     );
   }
   const parsedRange = parseRange(currentValue);
@@ -319,7 +323,7 @@ export function bumpRange(
             currentVersion,
             newVersion,
           },
-          options
+          options,
         );
         if (
           bumpedSubRange &&
@@ -339,7 +343,7 @@ export function bumpRange(
     return versions.filter((x: any) => x !== null && x !== '').join(' ');
   }
   logger.debug(
-    'Unsupported range type for rangeStrategy=bump: ' + currentValue
+    'Unsupported range type for rangeStrategy=bump: ' + currentValue,
   );
   return null;
 }

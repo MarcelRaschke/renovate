@@ -28,16 +28,17 @@ export async function getAppDetails(token: string): Promise<UserDetails> {
 
 export async function getUserDetails(
   endpoint: string,
-  token: string
+  token: string,
 ): Promise<UserDetails> {
   try {
     const userData = (
-      await githubApi.getJson<{ login: string; name: string; id: number }>(
-        endpoint + 'user',
-        {
-          token,
-        }
-      )
+      await githubApi.getJsonUnchecked<{
+        login: string;
+        name: string;
+        id: number;
+      }>(endpoint + 'user', {
+        token,
+      })
     ).body;
     return {
       username: userData.login,
@@ -52,18 +53,21 @@ export async function getUserDetails(
 
 export async function getUserEmail(
   endpoint: string,
-  token: string
+  token: string,
 ): Promise<string | null> {
   try {
     const emails = (
-      await githubApi.getJson<{ email: string }[]>(endpoint + 'user/emails', {
-        token,
-      })
+      await githubApi.getJsonUnchecked<{ email: string }[]>(
+        endpoint + 'user/emails',
+        {
+          token,
+        },
+      )
     ).body;
     return emails?.[0].email ?? null;
-  } catch (err) {
+  } catch {
     logger.debug(
-      'Cannot read user/emails endpoint on GitHub to retrieve gitAuthor'
+      'Cannot read user/emails endpoint on GitHub to retrieve gitAuthor',
     );
     return null;
   }

@@ -5,7 +5,7 @@ import * as httpMock from '../../../../test/http-mock';
 import { ExternalHostError } from '../../../types/errors/external-host-error';
 import * as rubyVersioning from '../../versioning/ruby';
 import { memCache } from './versions-endpoint-cache';
-import { RubyGemsDatasource } from '.';
+import { RubygemsDatasource } from '.';
 
 const rubygemsOrgVersions = codeBlock`
   created_at: 2023-01-01T00:00:00.000Z
@@ -19,7 +19,6 @@ describe('modules/datasource/rubygems/index', () => {
   describe('getReleases', () => {
     beforeEach(() => {
       memCache.clear();
-      jest.resetAllMocks();
     });
 
     it('returns null for missing pkg', async () => {
@@ -34,10 +33,10 @@ describe('modules/datasource/rubygems/index', () => {
       expect(
         await getPkgReleases({
           versioning: rubyVersioning.id,
-          datasource: RubyGemsDatasource.id,
+          datasource: RubygemsDatasource.id,
           packageName: 'foobar',
           registryUrls: ['https://example.com'],
-        })
+        }),
       ).toBeNull();
     });
 
@@ -45,7 +44,7 @@ describe('modules/datasource/rubygems/index', () => {
       httpMock.scope('https://rubygems.org').get('/versions').reply(404);
       const res = await getPkgReleases({
         versioning: rubyVersioning.id,
-        datasource: RubyGemsDatasource.id,
+        datasource: RubygemsDatasource.id,
         packageName: 'foobar',
         registryUrls: [],
       });
@@ -68,7 +67,7 @@ describe('modules/datasource/rubygems/index', () => {
 
       const res = await getPkgReleases({
         versioning: rubyVersioning.id,
-        datasource: RubyGemsDatasource.id,
+        datasource: RubygemsDatasource.id,
         packageName: 'foobar',
         registryUrls: [],
       });
@@ -99,7 +98,7 @@ describe('modules/datasource/rubygems/index', () => {
 
       const res = await getPkgReleases({
         versioning: rubyVersioning.id,
-        datasource: RubyGemsDatasource.id,
+        datasource: RubygemsDatasource.id,
         packageName: 'foobar',
         registryUrls: [],
       });
@@ -137,7 +136,7 @@ describe('modules/datasource/rubygems/index', () => {
 
       const res = await getPkgReleases({
         versioning: rubyVersioning.id,
-        datasource: RubyGemsDatasource.id,
+        datasource: RubygemsDatasource.id,
         packageName: 'foobar',
         registryUrls: [
           'https://registry-1.com',
@@ -169,12 +168,12 @@ describe('modules/datasource/rubygems/index', () => {
             { number: '1.0.0' },
             { number: '2.0.0' },
             { number: '3.0.0' },
-          ])
+          ]),
         );
 
       const res = await getPkgReleases({
         versioning: rubyVersioning.id,
-        datasource: RubyGemsDatasource.id,
+        datasource: RubygemsDatasource.id,
         packageName: 'foobar',
         registryUrls: ['https://example.com'],
       });
@@ -201,12 +200,12 @@ describe('modules/datasource/rubygems/index', () => {
             1.0.0 |checksum:aaa
             2.0.0 |checksum:bbb
             3.0.0 |checksum:ccc
-          `
+          `,
         );
 
       const res = await getPkgReleases({
         versioning: rubyVersioning.id,
-        datasource: RubyGemsDatasource.id,
+        datasource: RubygemsDatasource.id,
         packageName: 'foobar',
         registryUrls: ['https://example.com'],
       });
@@ -229,10 +228,10 @@ describe('modules/datasource/rubygems/index', () => {
       await expect(
         getPkgReleases({
           versioning: rubyVersioning.id,
-          datasource: RubyGemsDatasource.id,
+          datasource: RubygemsDatasource.id,
           packageName: 'foobar',
           registryUrls: ['https://example.com'],
-        })
+        }),
       ).rejects.toThrow(ExternalHostError);
     });
 
@@ -249,10 +248,10 @@ describe('modules/datasource/rubygems/index', () => {
       await expect(
         getPkgReleases({
           versioning: rubyVersioning.id,
-          datasource: RubyGemsDatasource.id,
+          datasource: RubygemsDatasource.id,
           packageName: 'foobar',
           registryUrls: ['https://example.com'],
-        })
+        }),
       ).rejects.toThrow(ExternalHostError);
     });
 
@@ -264,7 +263,7 @@ describe('modules/datasource/rubygems/index', () => {
 
       const res = await getPkgReleases({
         versioning: rubyVersioning.id,
-        datasource: RubyGemsDatasource.id,
+        datasource: RubygemsDatasource.id,
         packageName: 'foobar',
         registryUrls: ['https://rubygems.pkg.github.com/example'],
       });
@@ -282,12 +281,12 @@ describe('modules/datasource/rubygems/index', () => {
             { number: '1.0.0' },
             { number: '2.0.0' },
             { number: '3.0.0' },
-          ])
+          ]),
         );
 
       const res = await getPkgReleases({
         versioning: rubyVersioning.id,
-        datasource: RubyGemsDatasource.id,
+        datasource: RubygemsDatasource.id,
         packageName: 'foobar',
         registryUrls: ['https://rubygems.pkg.github.com/example'],
       });

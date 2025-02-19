@@ -1,4 +1,5 @@
-import { SimpleGit, simpleGit } from 'simple-git';
+import type { SimpleGit } from 'simple-git';
+import { simpleGit } from 'simple-git';
 import { getPkgReleases } from '..';
 import { Fixtures } from '../../../../test/fixtures';
 import { add, clear } from '../../../util/host-rules';
@@ -83,7 +84,7 @@ describe('modules/datasource/git-refs/index', () => {
 
       const digest = await new GitRefsDatasource().getDigest(
         { packageName: 'a tag to look up' },
-        'v2.0.0'
+        'v2.0.0',
       );
       expect(digest).toBeNull();
     });
@@ -93,7 +94,7 @@ describe('modules/datasource/git-refs/index', () => {
 
       const digest = await new GitRefsDatasource().getDigest(
         { packageName: 'a tag to look up' },
-        'v1.0.4'
+        'v1.0.4',
       );
       expect(digest).toBe('2b52829c7c1bd65b3501c450849c53b90b11fa0e');
     });
@@ -103,7 +104,7 @@ describe('modules/datasource/git-refs/index', () => {
 
       const digest = await new GitRefsDatasource().getDigest(
         { packageName: 'a tag to look up' },
-        'master'
+        'master',
       );
       expect(digest).toBe('a9920c014aebc28dc1b23e7efcc006d0455cc710');
     });
@@ -113,7 +114,7 @@ describe('modules/datasource/git-refs/index', () => {
 
       const digest = await new GitRefsDatasource().getDigest(
         { packageName: 'another tag to look up' },
-        undefined
+        undefined,
       );
       expect(digest).toBe('a9920c014aebc28dc1b23e7efcc006d0455cc710');
     });
@@ -123,7 +124,7 @@ describe('modules/datasource/git-refs/index', () => {
 
       const digest = await new GitRefsDatasource().getDigest(
         { packageName: 'another tag to look up' },
-        undefined
+        undefined,
       );
       expect(digest).toBe('a9920c014aebc28dc1b23e7efcc006d0455cc710');
       expect(gitMock.env).toHaveBeenCalledWith({});
@@ -140,7 +141,7 @@ describe('modules/datasource/git-refs/index', () => {
 
       const digest = await new GitRefsDatasource().getDigest(
         { packageName: 'another tag to look up' },
-        undefined
+        undefined,
       );
       expect(digest).toBe('a9920c014aebc28dc1b23e7efcc006d0455cc710');
       expect(gitMock.env).toHaveBeenCalledWith({
@@ -165,7 +166,7 @@ describe('modules/datasource/git-refs/index', () => {
 
       const digest = await new GitRefsDatasource().getDigest(
         { packageName: 'another tag to look up' },
-        undefined
+        undefined,
       );
       expect(digest).toBe('a9920c014aebc28dc1b23e7efcc006d0455cc710');
       expect(gitMock.env).toHaveBeenCalledWith({

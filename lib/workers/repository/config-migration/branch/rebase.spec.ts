@@ -1,7 +1,8 @@
 import type { Indent } from 'detect-indent';
 import JSON5 from 'json5';
 import { Fixtures } from '../../../../../test/fixtures';
-import { RenovateConfig, git, partial, scm } from '../../../../../test/util';
+import type { RenovateConfig } from '../../../../../test/util';
+import { git, partial, scm } from '../../../../../test/util';
 import { getConfig } from '../../../../config/defaults';
 import { GlobalConfig } from '../../../../config/global';
 import { MigratedDataFactory } from './migrated-data';
@@ -11,13 +12,13 @@ import { jsonStripWhitespaces, rebaseMigrationBranch } from './rebase';
 jest.mock('../../../../util/git');
 
 const formattedMigratedData = Fixtures.getJson(
-  './migrated-data-formatted.json'
+  './migrated-data-formatted.json',
 );
 
 describe('workers/repository/config-migration/branch/rebase', () => {
   const prettierSpy = jest.spyOn(
     MigratedDataFactory,
-    'applyPrettierFormatting'
+    'applyPrettierFormatting',
   );
 
   beforeEach(() => {
@@ -49,15 +50,6 @@ describe('workers/repository/config-migration/branch/rebase', () => {
       };
     });
 
-    it('does not rebase modified branch', async () => {
-      scm.isBranchModified.mockResolvedValueOnce(true);
-
-      await rebaseMigrationBranch(config, migratedConfigData);
-
-      expect(scm.checkoutBranch).toHaveBeenCalledTimes(0);
-      expect(scm.commitAndPush).toHaveBeenCalledTimes(0);
-    });
-
     it.each([
       ['renovate.json', renovateConfigJson],
       ['renovate.json5', renovateConfigJson5],
@@ -73,7 +65,7 @@ describe('workers/repository/config-migration/branch/rebase', () => {
         expect(scm.checkoutBranch).toHaveBeenCalledTimes(0);
         expect(scm.commitAndPush).toHaveBeenCalledTimes(0);
         expect(git.getFile).toHaveBeenCalledTimes(1);
-      }
+      },
     );
 
     it.each([
@@ -117,10 +109,10 @@ describe('workers/repository/config-migration/branch/rebase', () => {
             },
           ],
           message: `Migrate config ${filename}`,
-          platformCommit: false,
+          platformCommit: 'auto',
           baseBranch: 'dev',
         });
-      }
+      },
     );
 
     it.each([
@@ -140,7 +132,7 @@ describe('workers/repository/config-migration/branch/rebase', () => {
 
         expect(scm.checkoutBranch).toHaveBeenCalledTimes(0);
         expect(scm.commitAndPush).toHaveBeenCalledTimes(0);
-      }
+      },
     );
   });
 

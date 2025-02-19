@@ -5,7 +5,7 @@ import type { MatchResult } from './types';
 
 const regExps = {
   wildcard: regEx(/^.*?/),
-  space: regEx(/(\s+|\/\/[^\n]*|\/\*.*\*\/)+/, 's'),
+  space: regEx(/(\s+|\/\/[^\n]*|\/\*.*\*\/)+/s),
   depsKeyword: regEx(/dependencies/),
   colon: regEx(/:/),
   beginSection: regEx(/\[/),
@@ -132,7 +132,7 @@ function getDepName(url: string | null): string | null {
         .replace(regEx(/\/$/), '');
     }
     return url;
-  } catch (e) {
+  } catch {
     return null;
   }
 }

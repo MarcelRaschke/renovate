@@ -1,6 +1,5 @@
-import { Fixtures } from '../../../../test/fixtures';
 import type { PackageDependency } from '../types';
-import { getGitlabDep, replaceReferenceTags } from './utils';
+import { getGitlabDep } from './utils';
 
 describe('modules/manager/gitlabci/utils', () => {
   describe('getGitlabDep', () => {
@@ -43,14 +42,14 @@ describe('modules/manager/gitlabci/utils', () => {
           depName: 'renovate/renovate',
           currentValue: '19.70.8-slim',
         });
-      }
+      },
     );
 
     it.each`
       name                         | registryAliases                                         | imageName                     | dep
-      ${'multiple aliases'}        | ${{ foo: 'foo.registry.com', bar: 'bar.registry.com' }} | ${'foo/image:1.0'}            | ${{ depName: 'foo.registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `foo/image${versionAndDigestTemplate}` }}
-      ${'aliased variable'}        | ${{ $CI_REGISTRY: 'registry.com' }}                     | ${'$CI_REGISTRY/image:1.0'}   | ${{ depName: 'registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `$CI_REGISTRY/image${versionAndDigestTemplate}` }}
-      ${'variables with brackets'} | ${{ '${CI_REGISTRY}': 'registry.com' }}                 | ${'${CI_REGISTRY}/image:1.0'} | ${{ depName: 'registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `$\{CI_REGISTRY}/image${versionAndDigestTemplate}` }}
+      ${'multiple aliases'}        | ${{ foo: 'foo.registry.com', bar: 'bar.registry.com' }} | ${'foo/image:1.0'}            | ${{ depName: 'foo/image', packageName: 'foo.registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `foo/image${versionAndDigestTemplate}` }}
+      ${'aliased variable'}        | ${{ $CI_REGISTRY: 'registry.com' }}                     | ${'$CI_REGISTRY/image:1.0'}   | ${{ depName: '$CI_REGISTRY/image', packageName: 'registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `$CI_REGISTRY/image${versionAndDigestTemplate}` }}
+      ${'variables with brackets'} | ${{ '${CI_REGISTRY}': 'registry.com' }}                 | ${'${CI_REGISTRY}/image:1.0'} | ${{ depName: '${CI_REGISTRY}/image', packageName: 'registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: `$\{CI_REGISTRY}/image${versionAndDigestTemplate}` }}
       ${'not aliased variable'}    | ${{}}                                                   | ${'$CI_REGISTRY/image:1.0'}   | ${{ autoReplaceStringTemplate: defaultAutoReplaceStringTemplate }}
       ${'plain image'}             | ${{}}                                                   | ${'registry.com/image:1.0'}   | ${{ depName: 'registry.com/image', currentValue: '1.0', autoReplaceStringTemplate: defaultAutoReplaceStringTemplate }}
     `(
@@ -68,26 +67,18 @@ describe('modules/manager/gitlabci/utils', () => {
           ...dep,
           replaceString: imageName,
         });
-      }
+      },
     );
 
     it('no Docker hub', () => {
       expect(
-        getGitlabDep('quay.io/prometheus/node-exporter:v1.3.1')
+        getGitlabDep('quay.io/prometheus/node-exporter:v1.3.1'),
       ).toMatchObject({
         autoReplaceStringTemplate: defaultAutoReplaceStringTemplate,
         replaceString: 'quay.io/prometheus/node-exporter:v1.3.1',
         depName: 'quay.io/prometheus/node-exporter',
         currentValue: 'v1.3.1',
       });
-    });
-  });
-
-  describe('replaceReferenceTags', () => {
-    it('replaces all !reference tags with empty strings', () => {
-      const yamlFileReferenceConfig = Fixtures.get('gitlab-ci.reference.yaml');
-      const replaced = replaceReferenceTags(yamlFileReferenceConfig);
-      expect(replaced).not.toContain('!reference');
     });
   });
 });

@@ -22,6 +22,13 @@ export class DenoDatasource extends Datasource {
 
   override readonly defaultRegistryUrls = ['https://apiland.deno.dev'];
 
+  override readonly releaseTimestampSupport = true;
+  override readonly releaseTimestampNote =
+    'The release timestamp is determined from the `uploaded_at` field in the results.';
+  override readonly sourceUrlSupport = 'release';
+  override readonly sourceUrlNote =
+    'The source URL is determined from the `repository` field in the results.';
+
   constructor() {
     super(DenoDatasource.id);
   }
@@ -30,7 +37,7 @@ export class DenoDatasource extends Datasource {
     namespace: `datasource-${DenoDatasource.id}`,
     key: ({ packageName, registryUrl }: GetReleasesConfig) =>
       // TODO: types (#22198)
-      `${registryUrl}:${packageName}`,
+      `getReleases:${registryUrl}:${packageName}`,
   })
   async getReleases({
     packageName,
@@ -39,12 +46,12 @@ export class DenoDatasource extends Datasource {
     const massagedRegistryUrl = registryUrl!;
 
     const extractResult = regEx(
-      /^(https:\/\/deno.land\/)(?<rawPackageName>[^@\s]+)/
+      /^(https:\/\/deno.land\/)(?<rawPackageName>[^@\s]+)/,
     ).exec(packageName);
     const rawPackageName = extractResult?.groups?.rawPackageName;
     if (is.nullOrUndefined(rawPackageName)) {
       logger.debug(
-        `Could not extract rawPackageName from packageName: "${packageName}"`
+        `Could not extract rawPackageName from packageName: "${packageName}"`,
       );
       return null;
     }
@@ -56,21 +63,22 @@ export class DenoDatasource extends Datasource {
     const moduleAPIURL = joinUrlParts(
       massagedRegistryUrl,
       'v2/modules',
-      massagedPackageName
+      massagedPackageName,
     );
 
     return await this.getReleaseResult(moduleAPIURL);
   }
 
   @cache({
-    namespace: `datasource-${DenoDatasource.id}-versions`,
-    key: (moduleAPIURL) => moduleAPIURL,
+    namespace: `datasource-${DenoDatasource.id}`,
+    key: (moduleAPIURL) => `getReleaseResult:${moduleAPIURL}`,
   })
   async getReleaseResult(moduleAPIURL: string): Promise<ReleaseResult> {
+    const detailsCacheKey = `details:${moduleAPIURL}`;
     const releasesCache: Record<string, Release> =
       (await packageCache.get(
-        `datasource-${DenoDatasource.id}-details`,
-        moduleAPIURL
+        `datasource-${DenoDatasource.id}`,
+        detailsCacheKey,
       )) ?? {};
     let cacheModified = false;
 
@@ -94,11 +102,11 @@ export class DenoDatasource extends Datasource {
           url,
           DenoAPIModuleVersionResponse.catch(({ error: err }) => {
             logger.warn(
-              { err },
-              `Deno: failed to get version details for ${version}`
+              { err, version },
+              'Deno: failed to get version details',
             );
             return { version };
-          })
+          }),
         );
 
         releasesCache[release.version] = release;
@@ -106,16 +114,16 @@ export class DenoDatasource extends Datasource {
 
         return release;
       },
-      { concurrency: 5 }
+      { concurrency: 5 },
     );
 
     if (cacheModified) {
       // 1 week. Releases at Deno are immutable, therefore we can use a long term cache here.
       await packageCache.set(
-        `datasource-${DenoDatasource.id}-details`,
-        moduleAPIURL,
+        `datasource-${DenoDatasource.id}`,
+        detailsCacheKey,
         releasesCache,
-        10080
+        10080,
       );
     }
 

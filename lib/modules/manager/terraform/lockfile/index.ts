@@ -1,10 +1,15 @@
 import is from '@sindresorhus/is';
 import { logger } from '../../../../logger';
 import * as p from '../../../../util/promises';
-import { GetPkgReleasesConfig, getPkgReleases } from '../../../datasource';
-import { TerraformProviderDatasource } from '../../../datasource/terraform-provider';
+import { escapeRegExp, regEx } from '../../../../util/regex';
+import type { GetPkgReleasesConfig } from '../../../datasource';
+import { getPkgReleases } from '../../../datasource';
 import { get as getVersioning } from '../../../versioning';
-import type { UpdateArtifact, UpdateArtifactsResult } from '../../types';
+import type {
+  UpdateArtifact,
+  UpdateArtifactsResult,
+  Upgrade,
+} from '../../types';
 import { massageProviderLookupName } from '../util';
 import { TerraformProviderHash } from './hash';
 import type { ProviderLock, ProviderLockUpdate } from './types';
@@ -12,12 +17,13 @@ import {
   extractLocks,
   findLockFile,
   isPinnedVersion,
+  massageNewValue,
   readLockFile,
   writeLockUpdates,
 } from './util';
 
 async function updateAllLocks(
-  locks: ProviderLock[]
+  locks: ProviderLock[],
 ): Promise<ProviderLockUpdate[]> {
   const updates = await p.map(
     locks,
@@ -35,7 +41,7 @@ async function updateAllLocks(
       const versionsList = releases.map((release) => release.version);
       const newVersion = versioning.getSatisfyingVersion(
         versionsList,
-        lock.constraints
+        lock.constraints,
       );
 
       // if the new version is the same as the last, signal that no update is needed
@@ -49,16 +55,76 @@ async function updateAllLocks(
           (await TerraformProviderHash.createHashes(
             lock.registryUrl,
             lock.packageName,
-            newVersion
+            newVersion,
           )) ?? [],
         ...lock,
       };
       return update;
     },
-    { concurrency: 4 }
+    { concurrency: 4 },
   );
 
   return updates.filter(is.truthy);
+}
+
+export function getNewConstraint(
+  dep: Upgrade<Record<string, unknown>>,
+  oldConstraint: string | undefined,
+): string | undefined {
+  const {
+    currentValue,
+    currentVersion,
+    newValue: rawNewValue,
+    newVersion,
+    packageName,
+  } = dep;
+
+  const newValue = massageNewValue(rawNewValue);
+
+  if (oldConstraint && currentValue && newValue && currentValue === newValue) {
+    logger.debug(
+      `Leaving constraints "${oldConstraint}" unchanged for "${packageName}" as current and new values are the same`,
+    );
+    return oldConstraint;
+  }
+
+  if (
+    oldConstraint &&
+    currentValue &&
+    newValue &&
+    oldConstraint.includes(currentValue)
+  ) {
+    logger.debug(
+      `Updating constraint "${oldConstraint}" to replace "${currentValue}" with "${newValue}" for "${packageName}"`,
+    );
+    //remove surplus .0 version
+    return oldConstraint.replace(
+      regEx(`(,\\s|^)${escapeRegExp(currentValue)}(\\.0)*`),
+      `$1${newValue}`,
+    );
+  }
+
+  if (
+    oldConstraint &&
+    currentVersion &&
+    newVersion &&
+    oldConstraint.includes(currentVersion)
+  ) {
+    logger.debug(
+      `Updating constraint "${oldConstraint}" to replace "${currentVersion}" with "${newVersion}" for "${packageName}"`,
+    );
+    return oldConstraint.replace(currentVersion, newVersion);
+  }
+
+  if (isPinnedVersion(newValue)) {
+    logger.debug(`Pinning constraint for "${packageName}" to "${newVersion}"`);
+    return newVersion;
+  }
+
+  logger.debug(
+    `Could not detect constraint to update for "${packageName}" so setting to newValue "${newValue}"`,
+  );
+  return newValue;
 }
 
 export async function updateArtifacts({
@@ -95,23 +161,40 @@ export async function updateArtifacts({
     } else {
       const providerDeps = updatedDeps.filter((dep) =>
         // TODO #22198
-        ['provider', 'required_provider'].includes(dep.depType!)
+        ['provider', 'required_provider'].includes(dep.depType!),
       );
+      logger.debug(`Found ${providerDeps.length} provider deps`);
       for (const dep of providerDeps) {
         massageProviderLookupName(dep);
-        const { registryUrls, newVersion, newValue, packageName } = dep;
+        const { registryUrls, newVersion, packageName } = dep;
 
-        const registryUrl = registryUrls
-          ? registryUrls[0]
-          : TerraformProviderDatasource.defaultRegistryUrls[0];
-        const newConstraint = isPinnedVersion(newValue) ? newVersion : newValue;
         const updateLock = locks.find(
-          (value) => value.packageName === packageName
+          (value) => value.packageName === packageName,
         );
         // istanbul ignore if: needs test
         if (!updateLock) {
+          logger.debug(`Skipping. No lock found for "${packageName}"`);
           continue;
         }
+        if (dep.isLockfileUpdate) {
+          const versioning = getVersioning(dep.versioning);
+          const satisfyingVersion = versioning.getSatisfyingVersion(
+            [dep.newVersion!],
+            updateLock.constraints,
+          );
+
+          if (!satisfyingVersion) {
+            logger.debug(
+              `Skipping. Lockfile update with "${newVersion}" does not statisfy constraints "${updateLock.constraints}" for "${packageName}"`,
+            );
+            continue;
+          }
+        }
+
+        // use registryURL defined in the update and fall back to the one defined in the lockfile
+        const registryUrl = registryUrls?.[0] ?? updateLock.registryUrl;
+
+        const newConstraint = getNewConstraint(dep, updateLock.constraints);
         const update: ProviderLockUpdate = {
           // TODO #22198
           newVersion: newVersion!,
@@ -120,7 +203,7 @@ export async function updateArtifacts({
             (await TerraformProviderHash.createHashes(
               registryUrl,
               updateLock.packageName,
-              newVersion!
+              newVersion!,
             )) ?? /* istanbul ignore next: needs test */ [],
           ...updateLock,
         };
@@ -132,9 +215,10 @@ export async function updateArtifacts({
       updates.length === 0 ||
       updates.some((value) => !value.newHashes?.length)
     ) {
+      logger.debug('No updates found or hash creation failed');
       return null;
     }
-
+    logger.debug(`Writing updates to ${lockFilePath}`);
     const res = writeLockUpdates(updates, lockFilePath, lockFileContent);
     return [res];
   } catch (err) {

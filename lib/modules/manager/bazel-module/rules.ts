@@ -8,7 +8,7 @@ import { regEx } from '../../../util/regex';
 import { BazelDatasource } from '../../datasource/bazel';
 import { GithubTagsDatasource } from '../../datasource/github-tags';
 import type { PackageDependency } from '../types';
-import { RecordFragmentSchema, StringFragmentSchema } from './fragments';
+import { RuleFragmentSchema, StringFragmentSchema } from './fragments';
 
 // Rule Schemas
 
@@ -49,7 +49,7 @@ function isMerge(value: BazelModulePackageDep): value is MergePackageDep {
 // be surprising to someone outside the bazel-module code to see the extra
 // properties.
 export function bazelModulePackageDepToPackageDependency(
-  bmpd: BazelModulePackageDep
+  bmpd: BazelModulePackageDep,
 ): PackageDependency {
   const copy: BazelModulePackageDep = clone(bmpd);
   if (isOverride(copy)) {
@@ -63,38 +63,36 @@ export function bazelModulePackageDepToPackageDependency(
   return copy;
 }
 
-const BazelDepToPackageDep = RecordFragmentSchema.extend({
+const BazelDepToPackageDep = RuleFragmentSchema.extend({
+  rule: z.literal('bazel_dep'),
   children: z.object({
-    rule: StringFragmentSchema.extend({
-      value: z.literal('bazel_dep'),
-    }),
     name: StringFragmentSchema,
-    version: StringFragmentSchema,
+    version: StringFragmentSchema.optional(),
   }),
 }).transform(
-  ({ children: { rule, name, version } }): BasePackageDep => ({
+  ({ rule, children: { name, version } }): BasePackageDep => ({
     datasource: BazelDatasource.id,
-    depType: rule.value,
+    depType: rule,
     depName: name.value,
-    currentValue: version.value,
-  })
+    currentValue: version?.value,
+    ...(version ? {} : { skipReason: 'unspecified-version' }),
+  }),
 );
 
-const GitOverrideToPackageDep = RecordFragmentSchema.extend({
+const GitOverrideToPackageDep = RuleFragmentSchema.extend({
+  rule: z.literal('git_override'),
   children: z.object({
-    rule: StringFragmentSchema.extend({
-      value: z.literal('git_override'),
-    }),
     module_name: StringFragmentSchema,
     remote: StringFragmentSchema,
     commit: StringFragmentSchema,
   }),
 }).transform(
   ({
-    children: { rule, module_name: moduleName, remote, commit },
+    rule,
+    children: { module_name: moduleName, remote, commit },
   }): OverridePackageDep => {
     const override: OverridePackageDep = {
-      depType: rule.value,
+      depType: rule,
       depName: moduleName.value,
       bazelDepSkipReason: 'git-dependency',
       currentDigest: commit.value,
@@ -107,24 +105,23 @@ const GitOverrideToPackageDep = RecordFragmentSchema.extend({
       override.skipReason = 'unsupported-datasource';
     }
     return override;
-  }
+  },
 );
 
-const SingleVersionOverrideToPackageDep = RecordFragmentSchema.extend({
+const SingleVersionOverrideToPackageDep = RuleFragmentSchema.extend({
+  rule: z.literal('single_version_override'),
   children: z.object({
-    rule: StringFragmentSchema.extend({
-      value: z.literal('single_version_override'),
-    }),
     module_name: StringFragmentSchema,
     version: StringFragmentSchema.optional(),
     registry: StringFragmentSchema.optional(),
   }),
 }).transform(
   ({
-    children: { rule, module_name: moduleName, version, registry },
+    rule,
+    children: { module_name: moduleName, version, registry },
   }): BasePackageDep => {
     const base: BasePackageDep = {
-      depType: rule.value,
+      depType: rule,
       depName: moduleName.value,
       skipReason: 'ignored',
     };
@@ -141,20 +138,18 @@ const SingleVersionOverrideToPackageDep = RecordFragmentSchema.extend({
       merge.registryUrls = [registry.value];
     }
     return base;
-  }
+  },
 );
 
-const UnsupportedOverrideToPackageDep = RecordFragmentSchema.extend({
+const UnsupportedOverrideToPackageDep = RuleFragmentSchema.extend({
+  rule: z.enum(['archive_override', 'local_path_override']),
   children: z.object({
-    rule: StringFragmentSchema.extend({
-      value: z.enum(['archive_override', 'local_path_override']),
-    }),
     module_name: StringFragmentSchema,
   }),
 }).transform(
-  ({ children: { rule, module_name: moduleName } }): OverridePackageDep => {
+  ({ rule, children: { module_name: moduleName } }): OverridePackageDep => {
     let bazelDepSkipReason: SkipReason = 'unsupported';
-    switch (rule.value) {
+    switch (rule) {
       case 'archive_override':
         bazelDepSkipReason = 'file-dependency';
         break;
@@ -163,12 +158,12 @@ const UnsupportedOverrideToPackageDep = RecordFragmentSchema.extend({
         break;
     }
     return {
-      depType: rule.value,
+      depType: rule,
       depName: moduleName.value,
       skipReason: 'unsupported-datasource',
       bazelDepSkipReason,
     };
-  }
+  },
 );
 
 export const RuleToBazelModulePackageDep = z.union([
@@ -179,14 +174,14 @@ export const RuleToBazelModulePackageDep = z.union([
 ]);
 
 const githubRemoteRegex = regEx(
-  /^https:\/\/github\.com\/(?<packageName>[^/]+\/.+)$/
+  /^https:\/\/github\.com\/(?<packageName>[^/]+\/.+)$/,
 );
 function githubPackageName(remote: string): string | undefined {
   return parseGithubUrl(remote)?.match(githubRemoteRegex)?.groups?.packageName;
 }
 
 function collectByModule(
-  packageDeps: BazelModulePackageDep[]
+  packageDeps: BazelModulePackageDep[],
 ): BazelModulePackageDep[][] {
   const rulesByModule = new Map<string, BasePackageDep[]>();
   for (const pkgDep of packageDeps) {
@@ -198,7 +193,7 @@ function collectByModule(
 }
 
 export function processModulePkgDeps(
-  packageDeps: BazelModulePackageDep[]
+  packageDeps: BazelModulePackageDep[],
 ): PackageDependency[] {
   if (!packageDeps.length) {
     return [];
@@ -227,7 +222,7 @@ export function processModulePkgDeps(
     const depTypes = overrides.map((o) => o.depType);
     logger.debug(
       { depName: moduleName, depTypes },
-      'More than one override for a module was found'
+      'More than one override for a module was found',
     );
     return deps;
   }
@@ -238,7 +233,30 @@ export function processModulePkgDeps(
 }
 
 export function toPackageDependencies(
-  packageDeps: BazelModulePackageDep[]
+  packageDeps: BazelModulePackageDep[],
 ): PackageDependency[] {
   return collectByModule(packageDeps).map(processModulePkgDeps).flat();
 }
+
+export const GitRepositoryToPackageDep = RuleFragmentSchema.extend({
+  rule: z.literal('git_repository'),
+  children: z.object({
+    name: StringFragmentSchema,
+    remote: StringFragmentSchema,
+    commit: StringFragmentSchema,
+  }),
+}).transform(({ rule, children: { name, remote, commit } }): BasePackageDep => {
+  const gitRepo: BasePackageDep = {
+    depType: rule,
+    depName: name.value,
+    currentDigest: commit.value,
+  };
+  const ghPackageName = githubPackageName(remote.value);
+  if (is.nonEmptyString(ghPackageName)) {
+    gitRepo.datasource = GithubTagsDatasource.id;
+    gitRepo.packageName = ghPackageName;
+  } else {
+    gitRepo.skipReason = 'unsupported-datasource';
+  }
+  return gitRepo;
+});
