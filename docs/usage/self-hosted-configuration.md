@@ -24,6 +24,50 @@ Please also see [Self-Hosted Experimental Options](./self-hosted-experimental.md
 !!! note
   Config options with `type=string` are always non-mergeable, so `mergeable=false`.
 
+## `aiProviderApiKey`
+
+The API key used to authenticate with the AI provider configured via `aiProviderType`.
+
+Not required for most locally hosted OpenAI-compatible servers, such as [Ollama](https://ollama.com) or [llama.cpp](https://github.com/ggml-org/llama.cpp).
+
+## `aiProviderBaseUrl`
+
+The base URL of the AI provider's API.
+Only used when `aiProviderType` is set.
+
+For example, to use a locally hosted [Ollama](https://ollama.com) server:
+
+```json {configType=global ignoreConfigWarnings=true}
+{
+  "aiProviderType": "openai-compatible",
+  "aiProviderBaseUrl": "http://localhost:11434/v1",
+  "aiProviderModel": "llama3.1"
+}
+```
+
+Or a locally hosted [llama.cpp](https://github.com/ggml-org/llama.cpp) server, which defaults to port `8080`:
+
+```json {configType=global ignoreConfigWarnings=true}
+{
+  "aiProviderType": "openai-compatible",
+  "aiProviderBaseUrl": "http://localhost:8080/v1",
+  "aiProviderModel": "llama3.1"
+}
+```
+
+## `aiProviderModel`
+
+The name of the model to request from the configured AI provider, for example `"llama3.1"`.
+Only used when `aiProviderType` is set.
+
+## `aiProviderType`
+
+The type of AI provider to use for internal, experimental AI-based features.
+
+Currently the only supported value is `"openai-compatible"`, which works with any [OpenAI-compatible API](https://platform.openai.com/docs/api-reference/chat), for example a locally hosted [Ollama](https://ollama.com) or [llama.cpp](https://github.com/ggml-org/llama.cpp) server.
+
+Leave this option unset to disable AI-based features.
+
 ## `allowCustomCrateRegistries`
 
 ## `allowPlugins`

@@ -149,6 +149,7 @@
     "pnpm": "^11.0.0"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.35",
     "@aws-sdk/client-codecommit": "3.1095.0",
     "@aws-sdk/client-ec2": "3.1095.0",
     "@aws-sdk/client-ecr": "3.1095.0",
@@ -190,6 +191,7 @@
     "adm-zip": "0.6.0",
     "ae-cvss-calculator": "1.0.13",
     "agentkeepalive": "4.6.0",
+    "ai": "7.0.77",
     "async-mutex": "0.5.0",
     "aws4": "1.13.2",
     "azure-devops-node-api": "15.1.3",

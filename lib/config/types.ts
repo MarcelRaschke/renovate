@@ -234,6 +234,10 @@ export interface GlobalOnlyConfigLegacy {
  * Should only contain config options where globalOnly=true.
  */
 export interface RepoGlobalConfig extends GlobalInheritableConfig {
+  aiProviderApiKey?: string;
+  aiProviderBaseUrl?: string;
+  aiProviderModel?: string;
+  aiProviderType?: AiProviderType;
   allowedCommands?: string[];
   allowCustomCrateRegistries?: boolean;
   allowPlugins?: boolean;
@@ -571,6 +575,8 @@ export const UpdateTypesOptions = [
 export type UpdateTypeOptions = (typeof UpdateTypesOptions)[number];
 
 export type FetchChangeLogsOptions = 'off' | 'branch' | 'pr';
+
+export type AiProviderType = 'openai-compatible';
 
 export type MatchStringsStrategy = 'any' | 'recursive' | 'combination';
 

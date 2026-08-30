@@ -101,6 +101,47 @@ const options: Readonly<RenovateOptions>[] = [
     globalOnly: true,
   },
   {
+    name: 'aiProviderType',
+    description:
+      'The type of AI provider to use for internal, experimental AI-based features. Currently only `"openai-compatible"` is supported, which works with any [OpenAI-compatible API](https://platform.openai.com/docs/api-reference/chat), for example a locally hosted [Ollama](https://ollama.com) or [llama.cpp](https://github.com/ggml-org/llama.cpp) server. Leave unset to disable AI-based features.',
+    stage: 'global',
+    type: 'string',
+    default: null,
+    globalOnly: true,
+    allowedValues: ['openai-compatible'],
+    experimental: true,
+  },
+  {
+    name: 'aiProviderBaseUrl',
+    description:
+      'The base URL of the AI provider API. For example use `"http://localhost:11434/v1"` to connect to a local [Ollama](https://ollama.com) server, or `"http://localhost:8080/v1"` for a local [llama.cpp](https://github.com/ggml-org/llama.cpp) server. Only used when `aiProviderType` is set.',
+    stage: 'global',
+    type: 'string',
+    default: null,
+    globalOnly: true,
+    experimental: true,
+  },
+  {
+    name: 'aiProviderModel',
+    description:
+      'The name of the model to request from the configured AI provider, for example `"llama3.1"`. Only used when `aiProviderType` is set.',
+    stage: 'global',
+    type: 'string',
+    default: null,
+    globalOnly: true,
+    experimental: true,
+  },
+  {
+    name: 'aiProviderApiKey',
+    description:
+      'The API key used to authenticate with the AI provider. Not required for most locally hosted servers such as Ollama or llama.cpp. Only used when `aiProviderType` is set.',
+    stage: 'global',
+    type: 'string',
+    default: null,
+    globalOnly: true,
+    experimental: true,
+  },
+  {
     name: 'useCloudMetadataServices',
     description:
       'If `false`, Renovate does not try to access cloud metadata services.',
